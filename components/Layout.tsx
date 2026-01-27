@@ -7,9 +7,6 @@ import React, { useState } from "react";
 import {
   LayoutDashboard,
   Settings,
-  ClipboardList,
-  FlaskConical,
-  Activity,
   ChevronRight,
   TestTube,
   Table2,
@@ -44,14 +41,13 @@ interface LayoutProps {
 }
 
 const navItems = [
-  { to: "/", icon: LayoutDashboard, label: "Overview" },
-  { to: "/agent-traces", icon: Table2, label: "Agent Traces" },
-  { to: "/traces", icon: Activity, label: "Live Traces" },
+  { to: "/", icon: LayoutDashboard, label: "Overview", testId: "nav-overview" },
+  { to: "/agent-traces", icon: Table2, label: "Agent Traces", testId: "nav-agent-traces" },
 ];
 
 const evalsSubItems = [
-  { to: "/test-cases", label: "Test Cases" },
-  { to: "/benchmarks", label: "Benchmarks" },
+  { to: "/test-cases", label: "Test Cases", testId: "nav-test-cases" },
+  { to: "/benchmarks", label: "Benchmarks", testId: "nav-benchmarks" },
 ];
 
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
@@ -72,7 +68,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   return (
     <SidebarProvider className="h-screen overflow-hidden">
-      <Sidebar collapsible="none" className="h-screen flex-shrink-0">
+      <Sidebar collapsible="none" className="h-screen flex-shrink-0" data-testid="sidebar">
         <SidebarHeader className="p-4 border-b border-sidebar-border">
           <div className="flex items-center space-x-3">
             <img src={OpenSearchLogo} alt="OpenSearch" className="w-8 h-8" />
@@ -97,6 +93,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                       asChild
                       isActive={location.pathname === item.to}
                       tooltip={item.label}
+                      data-testid={item.testId}
                     >
                       <Link to={item.to}>
                         <item.icon />
@@ -129,6 +126,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                             <SidebarMenuSubButton
                               asChild
                               isActive={location.pathname === item.to || location.pathname.startsWith(item.to + "/")}
+                              data-testid={item.testId}
                             >
                               <Link to={item.to}>{item.label}</Link>
                             </SidebarMenuSubButton>
@@ -150,6 +148,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                     asChild
                     isActive={location.pathname === "/settings"}
                     tooltip="Settings"
+                    data-testid="nav-settings"
                   >
                     <Link to="/settings">
                       <Settings />
