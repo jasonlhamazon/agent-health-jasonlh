@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { AppConfig } from '@/types';
+import { AppConfig, ModelConfig } from '@/types';
 import { ENV_CONFIG, buildMLCommonsHeaders } from '@/lib/config';
 
 /**
@@ -150,3 +150,47 @@ export const MOCK_TOOLS = [
   { name: 'opensearch_cluster_allocation_explain', description: 'Explain shard allocation' },
   { name: 'opensearch_list_indices', description: 'List all indices with detailed information' },
 ];
+
+/**
+ * Config change listeners.
+ * App.tsx subscribes so that any refreshConfig() call triggers a
+ * React re-render, making updated agents/models visible in all components.
+ */
+type ConfigChangeListener = () => void;
+const configListeners = new Set<ConfigChangeListener>();
+
+/**
+ * Subscribe to config changes. Returns an unsubscribe function.
+ */
+export function subscribeConfigChange(listener: ConfigChangeListener): () => void {
+  configListeners.add(listener);
+  return () => { configListeners.delete(listener); };
+}
+
+/**
+ * Fetch agent and model config from the server and update DEFAULT_CONFIG in place.
+ * Notifies subscribers so React trees re-render with the new values.
+ */
+export async function refreshConfig(): Promise<void> {
+  try {
+    const [agentsRes, modelsRes] = await Promise.all([
+      fetch('/api/agents'),
+      fetch('/api/models'),
+    ]);
+    if (agentsRes.ok) {
+      const { agents } = await agentsRes.json();
+      DEFAULT_CONFIG.agents = agents;
+    }
+    if (modelsRes.ok) {
+      const { models: modelsArray } = await modelsRes.json();
+      const modelsRecord: Record<string, ModelConfig> = {};
+      for (const { key, ...cfg } of modelsArray) {
+        modelsRecord[key] = cfg;
+      }
+      DEFAULT_CONFIG.models = modelsRecord;
+    }
+  } catch {
+    // Server unreachable — keep hardcoded defaults
+  }
+  configListeners.forEach(fn => fn());
+}

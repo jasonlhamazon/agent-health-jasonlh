@@ -9,7 +9,8 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { AgentConfig, EvaluationReport, TestCase, TrajectoryStep, OpenSearchLog, LLMJudgeResponse, ConnectorProtocol } from '@/types';
+import { AgentConfig, EvaluationReport, TestCase, TrajectoryStep, OpenSearchLog, LLMJudgeResponse, ConnectorProtocol, BeforeRequestContext } from '@/types';
+import { executeBeforeRequestHook } from '@/lib/hooks';
 import { AGUIToTrajectoryConverter, consumeSSEStream, buildAgentPayload } from '@/services/agent';
 import { AGUIEvent } from '@/types/agui';
 import { generateMockTrajectory } from './mockTrajectory';
@@ -133,7 +134,7 @@ export async function runEvaluationWithConnector(
     const connector = connectorRegistry.getForAgent(agentWithConnector);
 
     // Build connector request
-    const request: ConnectorRequest = {
+    let request: ConnectorRequest = {
       testCase,
       modelId,
     };
@@ -141,9 +142,36 @@ export async function runEvaluationWithConnector(
     // Build auth from agent config
     const auth = buildConnectorAuth(agent);
 
+    // Execute beforeRequest hook if defined
+    let effectiveEndpoint = agent.endpoint;
+    if (agent.hooks?.beforeRequest) {
+      const previewPayload = connector.buildPayload(request);
+
+      const hookContext: BeforeRequestContext = {
+        endpoint: agent.endpoint,
+        payload: previewPayload,
+        headers: auth.headers || agent.headers || {},
+      };
+      const hookResult = await executeBeforeRequestHook(agent.hooks, hookContext, agent.key);
+      effectiveEndpoint = hookResult.endpoint;
+
+      // Pass the hook-modified payload through to the connector so it skips
+      // its internal buildPayload() call. This preserves ALL modifications the
+      // hook made to the payload (threadId, runId, custom fields, etc.)
+      request = {
+        ...request,
+        payload: hookResult.payload,
+      };
+
+      // Merge any hook-modified headers into auth
+      if (hookResult.headers) {
+        auth.headers = { ...auth.headers, ...hookResult.headers };
+      }
+    }
+
     // Execute via connector
     const result = await connector.execute(
-      agent.endpoint,
+      effectiveEndpoint,
       request,
       auth,
       onStep,
@@ -280,6 +308,8 @@ export async function runEvaluationWithConnector(
 
 /**
  * Run real agent evaluation by streaming AG UI events
+ * @deprecated Use runEvaluationWithConnector() via the server's /api/evaluate endpoint instead.
+ * This browser-side path is kept for backwards compatibility but has no active callers.
  */
 async function runRealAgentEvaluation(
   agent: AgentConfig,
@@ -301,6 +331,7 @@ async function runRealAgentEvaluation(
     endpoint: agent.endpoint,
     payload: agentPayload,
     headers: agent.headers,
+    agentKey: agent.key,
   };
 
   debug('Eval', 'Using proxy:', ENV_CONFIG.agentProxyUrl);
@@ -329,6 +360,10 @@ async function runRealAgentEvaluation(
 /**
  * Run evaluation with selected agent, model, and test case
  * Streams trajectory steps to UI in real-time via onStep callback
+ *
+ * @deprecated Use runServerEvaluation() from services/client/evaluationApi instead.
+ * The server-side path (/api/evaluate) consolidates all evaluation logic through the
+ * connector system, ensuring consistent behavior for hooks, storage, and all agent types.
  */
 export async function runEvaluation(
   agent: AgentConfig,

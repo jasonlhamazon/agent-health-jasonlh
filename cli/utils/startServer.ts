@@ -43,10 +43,12 @@ export async function startServer(options: StartOptions): Promise<void> {
   // Dynamic import the server module from package root
   // Using computed path prevents esbuild from bundling server code into CLI
   const packageRoot = findPackageRoot();
+
+  // Server loads its own config internally — no need to pre-load from a separate module
   const serverPath = join(packageRoot, 'server', 'dist', 'app.js');
   const { createApp } = await import(serverPath);
 
-  const app = createApp();
+  const app = await createApp();
 
   return new Promise((resolve) => {
     app.listen(options.port, '0.0.0.0', () => {

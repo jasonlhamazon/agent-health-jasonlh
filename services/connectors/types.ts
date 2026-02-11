@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import type { TestCase, TrajectoryStep } from '@/types';
+import type { TestCase, TrajectoryStep, AgentHooks } from '@/types';
 
 // ============ Connector Protocol Types ============
 
@@ -59,6 +59,12 @@ export interface ConnectorRequest {
   modelId: string;
   threadId?: string;
   runId?: string;
+  /**
+   * Pre-built payload from hook processing.
+   * When set, connectors should use this directly instead of calling buildPayload().
+   * This ensures that any modifications made by beforeRequest hooks are preserved.
+   */
+  payload?: any;
 }
 
 /**
@@ -178,6 +184,9 @@ export interface AgentConfigWithConnector {
 
   /** Authentication configuration */
   auth?: ConnectorAuth;
+
+  /** Lifecycle hooks for custom setup/transform logic */
+  hooks?: AgentHooks;
 }
 
 // ============ Registry Types ============

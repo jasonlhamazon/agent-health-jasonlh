@@ -41,38 +41,53 @@ function setupJsonParser(app: Express): void {
 
 /**
  * Setup static file serving for production mode
- * Serves built frontend from dist/ folder
+ * Serves built frontend assets (JS, CSS, images) from dist/ folder.
+ * SPA fallback is registered separately via setupSpaFallback() after routes.
  */
 function setupStaticServing(app: Express): void {
   // From server/dist/, go up 2 levels to package root, then into dist/
   const distPath = path.join(__dirname, '..', '..', 'dist');
-  const distExists = fs.existsSync(distPath);
+  const indexPath = path.join(distPath, 'index.html');
+  const indexExists = fs.existsSync(indexPath);
 
-  // Debug logging to diagnose path resolution
   console.log('[StaticServer] __dirname:', __dirname);
   console.log('[StaticServer] Computed distPath:', distPath);
-  console.log('[StaticServer] distPath exists:', distExists);
+  console.log('[StaticServer] index.html exists:', indexExists);
 
-  if (distExists) {
+  if (indexExists) {
     console.log('[StaticServer] Serving frontend from dist/ folder');
-    console.log('[StaticServer] Dist path:', distPath);
-
-    // Serve static assets (JS, CSS, images, etc.)
-    app.use(express.static(distPath));
-
-    // SPA fallback - serve index.html for all non-API routes
-    app.use((req: Request, res: Response, next: NextFunction) => {
-      // Don't serve index.html for API routes or if file exists
-      if (req.path.startsWith('/api/') || req.path === '/health') {
-        return next();
-      }
-      const indexPath = path.join(distPath, 'index.html');
-      res.sendFile(indexPath);
-    });
+    app.use(express.static(distPath, {
+      index: false,  // Don't serve index.html for directory requests — let SPA fallback handle it
+    }));
   } else {
-    console.log('[StaticServer] dist/ folder not found - running in API-only mode');
-    console.log('[StaticServer] Run "npm run build" to generate the frontend build');
+    console.log('[StaticServer] dist/index.html not found - API-only mode');
   }
+}
+
+/**
+ * SPA fallback - serve index.html for all non-API routes.
+ * Must be registered AFTER API routes so it only catches client-side routes.
+ */
+export function setupSpaFallback(app: Express): void {
+  const distPath = path.join(__dirname, '..', '..', 'dist');
+  const indexPath = path.join(distPath, 'index.html');
+
+  if (!fs.existsSync(indexPath)) return;
+
+  // Read index.html once at startup — avoids sendFile issues in esbuild bundles
+  const indexHtml = fs.readFileSync(indexPath, 'utf-8');
+
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    // Skip API routes and health checks
+    if (req.path.startsWith('/api/') || req.path === '/health') {
+      return next();
+    }
+    // Only serve index.html for GET/HEAD requests (not OPTIONS, POST, etc.)
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      return next();
+    }
+    res.type('html').send(indexHtml);
+  });
 }
 
 /**

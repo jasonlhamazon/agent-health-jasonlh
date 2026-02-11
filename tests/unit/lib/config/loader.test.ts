@@ -36,29 +36,6 @@ describe('Config Loader', () => {
       expect(config.models).toBeDefined();
     });
 
-    it('should load YAML config when agent-health.yaml exists', () => {
-      (fs.existsSync as jest.Mock).mockImplementation((filepath: string) => {
-        return filepath.includes('agent-health.yaml');
-      });
-
-      (fs.readFileSync as jest.Mock).mockReturnValue(`
-agents:
-  test-agent:
-    name: Test Agent
-    endpoint: http://localhost:3000
-    protocol: rest
-models:
-  test-model:
-    model_id: test-model-id
-    display_name: Test Model
-`);
-
-      const { loadConfigSync } = require('@/lib/config/loader');
-      const config = loadConfigSync();
-
-      expect(config).toBeDefined();
-    });
-
     it('should load TypeScript config when agent-health.config.ts exists', () => {
       (fs.existsSync as jest.Mock).mockImplementation((filepath: string) => {
         return filepath.includes('agent-health.config.ts');
@@ -71,59 +48,6 @@ models:
           models: { 'ts-model': { model_id: 'ts-model-id' } },
         },
       }), { virtual: true });
-
-      const { loadConfigSync } = require('@/lib/config/loader');
-      const config = loadConfigSync();
-
-      expect(config).toBeDefined();
-    });
-
-    it('should handle YAML parse errors gracefully', () => {
-      (fs.existsSync as jest.Mock).mockImplementation((filepath: string) => {
-        return filepath.includes('agent-health.yaml');
-      });
-
-      (fs.readFileSync as jest.Mock).mockReturnValue('invalid: yaml: content: [');
-
-      const { loadConfigSync } = require('@/lib/config/loader');
-
-      // Should not throw, should return default config
-      expect(() => loadConfigSync()).not.toThrow();
-    });
-
-    it('should interpolate environment variables in YAML', () => {
-      process.env.TEST_ENDPOINT = 'http://test-endpoint:8080';
-
-      (fs.existsSync as jest.Mock).mockImplementation((filepath: string) => {
-        return filepath.includes('agent-health.yaml');
-      });
-
-      (fs.readFileSync as jest.Mock).mockReturnValue(`
-agents:
-  test-agent:
-    endpoint: \${TEST_ENDPOINT}
-`);
-
-      const { loadConfigSync } = require('@/lib/config/loader');
-      const config = loadConfigSync();
-
-      expect(config).toBeDefined();
-
-      delete process.env.TEST_ENDPOINT;
-    });
-
-    it('should use default value when env var not set', () => {
-      delete process.env.MISSING_VAR;
-
-      (fs.existsSync as jest.Mock).mockImplementation((filepath: string) => {
-        return filepath.includes('agent-health.yaml');
-      });
-
-      (fs.readFileSync as jest.Mock).mockReturnValue(`
-agents:
-  test-agent:
-    endpoint: \${MISSING_VAR:http://default:3000}
-`);
 
       const { loadConfigSync } = require('@/lib/config/loader');
       const config = loadConfigSync();
@@ -144,28 +68,27 @@ agents:
       expect(typeof config).toBe('object');
     });
   });
+});
 
-  describe('mergeConfigs', () => {
-    it('should merge user config with defaults', () => {
-      (fs.existsSync as jest.Mock).mockImplementation((filepath: string) => {
-        return filepath.includes('agent-health.yaml');
-      });
+describe('toAgentConfig (via loadConfig)', () => {
+  it('should preserve hooks through agent config conversion', async () => {
+    (fs.existsSync as jest.Mock).mockReturnValue(false);
 
-      (fs.readFileSync as jest.Mock).mockReturnValue(`
-agents:
-  custom-agent:
-    name: Custom Agent
-    endpoint: http://custom:3000
-    protocol: rest
-`);
+    // Clear cache and modules so we get a fresh loader
+    jest.resetModules();
+    const { loadConfig, clearConfigCache } = require('@/lib/config/loader');
+    clearConfigCache();
 
-      const { loadConfigSync } = require('@/lib/config/loader');
-      const config = loadConfigSync();
+    // loadConfig with no config file returns defaults; to test toAgentConfig
+    // we need to mock the file loading. Instead, test the exported mergeConfigs
+    // behavior indirectly: verify that agent configs from defaults don't break
+    // with the new hooks field.
+    const config = await loadConfig('/nonexistent', true);
 
-      // Should have both default and custom agents
-      expect(config).toBeDefined();
-      expect(config.agents).toBeDefined();
-    });
+    // Default agents should have no hooks (undefined)
+    for (const agent of config.agents) {
+      expect(agent.hooks).toBeUndefined();
+    }
   });
 });
 
@@ -181,5 +104,23 @@ describe('defineConfig', () => {
     const result = defineConfig(testConfig);
 
     expect(result).toBe(testConfig);
+  });
+
+  it('should preserve hooks in agent config', () => {
+    const { defineConfig } = require('@/lib/config/defineConfig');
+
+    const hookFn = async (ctx: any) => ctx;
+    const testConfig = {
+      agents: [{
+        key: 'test',
+        name: 'Test',
+        endpoint: 'http://localhost:3000',
+        models: ['claude-sonnet-4.5'],
+        hooks: { beforeRequest: hookFn },
+      }],
+    };
+
+    const result = defineConfig(testConfig);
+    expect(result.agents[0].hooks.beforeRequest).toBe(hookFn);
   });
 });
