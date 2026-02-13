@@ -469,6 +469,7 @@ describe('Runs Storage Routes', () => {
       mockSearch.mockResolvedValue({
         body: {
           hits: {
+            total: { value: 1 },
             hits: [
               { _source: { id: 'run-123', testCaseId: 'tc-123' } },
             ],
@@ -485,6 +486,8 @@ describe('Runs Storage Routes', () => {
         expect.objectContaining({
           runs: expect.any(Array),
           total: expect.any(Number),
+          size: 100,
+          from: 0,
         })
       );
     });
@@ -504,6 +507,81 @@ describe('Runs Storage Routes', () => {
           ]),
         })
       );
+    });
+
+    it('should pass from parameter to OpenSearch query', async () => {
+      mockSearch.mockResolvedValue({
+        body: {
+          hits: {
+            total: { value: 150 },
+            hits: [
+              { _source: { id: 'run-101', testCaseId: 'tc-123' } },
+            ],
+          },
+        },
+      });
+
+      const { req, res } = createMocks({ testCaseId: 'tc-123' }, {}, { size: '100', from: '100' });
+      const handler = getRouteHandler(runsRoutes, 'get', '/api/storage/runs/by-test-case/:testCaseId');
+
+      await handler(req, res);
+
+      // Verify from is passed to OpenSearch
+      expect(mockSearch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: expect.objectContaining({
+            from: 100,
+            size: 100,
+          }),
+        })
+      );
+    });
+
+    it('should return real total reflecting all matching documents', async () => {
+      mockSearch.mockResolvedValue({
+        body: {
+          hits: {
+            total: { value: 236 },
+            hits: [
+              { _source: { id: 'run-1', testCaseId: 'demo-test-case-1' } },
+            ],
+          },
+        },
+      });
+
+      const { req, res } = createMocks({ testCaseId: 'demo-test-case-1' });
+      const handler = getRouteHandler(runsRoutes, 'get', '/api/storage/runs/by-test-case/:testCaseId');
+
+      await handler(req, res);
+
+      const response = (res.json as jest.Mock).mock.calls[0][0];
+      // Total = 236 (real) + 1 (sample for demo-test-case-1)
+      expect(response.total).toBe(237);
+    });
+
+    it('should only include sample data on first page (from=0)', async () => {
+      mockSearch.mockResolvedValue({
+        body: {
+          hits: {
+            total: { value: 150 },
+            hits: [
+              { _source: { id: 'run-101', testCaseId: 'demo-test-case-1' } },
+            ],
+          },
+        },
+      });
+
+      const { req, res } = createMocks({ testCaseId: 'demo-test-case-1' }, {}, { from: '100' });
+      const handler = getRouteHandler(runsRoutes, 'get', '/api/storage/runs/by-test-case/:testCaseId');
+
+      await handler(req, res);
+
+      const response = (res.json as jest.Mock).mock.calls[0][0];
+      // On page 2 (from=100), sample data should NOT be included in runs
+      const sampleRunIds = response.runs.filter((r: any) => r.id.startsWith('demo-'));
+      expect(sampleRunIds).toHaveLength(0);
+      // But total should still include sample count
+      expect(response.total).toBe(151); // 150 real + 1 sample
     });
   });
 
@@ -957,5 +1035,125 @@ describe('Runs Storage Routes - Error Handling (500 errors)', () => {
 
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({ error: 'Bulk failed' });
+  });
+
+  describe('GET /api/storage/runs/counts-by-test-case', () => {
+    it('should be registered before :id route so it is reachable', () => {
+      // Verify the counts-by-test-case route exists and is a GET handler
+      const handler = getRouteHandler(runsRoutes, 'get', '/api/storage/runs/counts-by-test-case');
+      expect(handler).toBeDefined();
+
+      // Verify the route is registered before the parameterized :id route
+      // This ensures Express doesn't match "counts-by-test-case" as an :id
+      const routes = (runsRoutes as any).stack
+        .filter((layer: any) => layer.route && layer.route.methods.get)
+        .map((layer: any) => layer.route.path);
+      const countsIndex = routes.indexOf('/api/storage/runs/counts-by-test-case');
+      const idIndex = routes.indexOf('/api/storage/runs/:id');
+      expect(countsIndex).toBeGreaterThanOrEqual(0);
+      expect(idIndex).toBeGreaterThanOrEqual(0);
+      expect(countsIndex).toBeLessThan(idIndex);
+    });
+
+    it('should return merged sample and real counts', async () => {
+      mockSearch.mockResolvedValue({
+        body: {
+          aggregations: {
+            by_test_case: {
+              buckets: [
+                { key: 'tc-real-1', doc_count: 5 },
+                { key: 'tc-real-2', doc_count: 3 },
+              ],
+            },
+          },
+        },
+      });
+
+      const { req, res } = createMocks();
+      const handler = getRouteHandler(runsRoutes, 'get', '/api/storage/runs/counts-by-test-case');
+
+      await handler(req, res);
+
+      const response = res.json as jest.Mock;
+      const { counts } = response.mock.calls[0][0];
+
+      // Sample runs: demo-test-case-1 has 1, demo-test-case-2 has 1
+      expect(counts['demo-test-case-1']).toBe(1);
+      expect(counts['demo-test-case-2']).toBe(1);
+      // Real data
+      expect(counts['tc-real-1']).toBe(5);
+      expect(counts['tc-real-2']).toBe(3);
+
+      // Verify aggregation query was used (size: 0 means no documents)
+      expect(mockSearch).toHaveBeenCalledWith(
+        expect.objectContaining({
+          body: expect.objectContaining({
+            size: 0,
+            aggs: expect.objectContaining({
+              by_test_case: expect.objectContaining({
+                terms: expect.objectContaining({ field: 'testCaseId' }),
+              }),
+            }),
+          }),
+        })
+      );
+    });
+
+    it('should return only sample counts when storage is unavailable', async () => {
+      (isStorageAvailable as jest.Mock).mockReturnValue(false);
+
+      const { req, res } = createMocks();
+      const handler = getRouteHandler(runsRoutes, 'get', '/api/storage/runs/counts-by-test-case');
+
+      await handler(req, res);
+
+      const response = res.json as jest.Mock;
+      const { counts } = response.mock.calls[0][0];
+
+      expect(counts['demo-test-case-1']).toBe(1);
+      expect(counts['demo-test-case-2']).toBe(1);
+      expect(mockSearch).not.toHaveBeenCalled();
+    });
+
+    it('should handle OpenSearch errors gracefully', async () => {
+      mockSearch.mockRejectedValue(new Error('Connection refused'));
+
+      const { req, res } = createMocks();
+      const handler = getRouteHandler(runsRoutes, 'get', '/api/storage/runs/counts-by-test-case');
+
+      await handler(req, res);
+
+      const response = res.json as jest.Mock;
+      const { counts } = response.mock.calls[0][0];
+
+      // Should still return sample counts even when OpenSearch fails
+      expect(counts['demo-test-case-1']).toBe(1);
+      expect(counts['demo-test-case-2']).toBe(1);
+    });
+
+    it('should merge counts when sample and real data share test case IDs', async () => {
+      mockSearch.mockResolvedValue({
+        body: {
+          aggregations: {
+            by_test_case: {
+              buckets: [
+                { key: 'demo-test-case-1', doc_count: 2 },
+              ],
+            },
+          },
+        },
+      });
+
+      const { req, res } = createMocks();
+      const handler = getRouteHandler(runsRoutes, 'get', '/api/storage/runs/counts-by-test-case');
+
+      await handler(req, res);
+
+      const response = res.json as jest.Mock;
+      const { counts } = response.mock.calls[0][0];
+
+      // 1 from sample + 2 from real = 3
+      expect(counts['demo-test-case-1']).toBe(3);
+    });
   });
 });
