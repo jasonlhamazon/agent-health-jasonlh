@@ -42,9 +42,22 @@ import { Span, TimeRange } from '@/types';
 import { processSpansIntoTree, calculateTimeRange } from '@/services/traces';
 import { formatDuration } from '@/services/traces/utils';
 import TraceVisualization from './TraceVisualization';
+import TraceTimelineChart from './TraceTimelineChart';
 import ViewToggle, { ViewMode } from './ViewToggle';
 import TraceFullScreenView from './TraceFullScreenView';
 import { SpanInputOutput } from './SpanInputOutput';
+import SpanDetailsPanel from './SpanDetailsPanel';
+import {
+  SummaryStatsGrid,
+  ToolsUsedSection,
+  TimeDistributionBar,
+} from './TraceSummary';
+import {
+  flattenSpans,
+  calculateCategoryStats,
+  extractToolStats,
+} from '@/services/traces/traceStats';
+import { categorizeSpanTree } from '@/services/traces/spanCategorization';
 
 interface TraceTableRow {
   traceId: string;
@@ -66,7 +79,7 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
   trace,
   onClose,
 }) => {
-  const [activeTab, setActiveTab] = useState('traces');
+  const [activeTab, setActiveTab] = useState('tree');
   const [viewMode, setViewMode] = useState<ViewMode>('timeline');
   const [selectedSpan, setSelectedSpan] = useState<Span | null>(null);
   const [expandedSpans, setExpandedSpans] = useState<Set<string>>(new Set());
@@ -76,6 +89,37 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
   // Process spans into tree
   const spanTree = useMemo(() => processSpansIntoTree(trace.spans), [trace.spans]);
   const timeRange = useMemo(() => calculateTimeRange(trace.spans), [trace.spans]);
+
+  // Categorize spans for summary stats
+  const categorizedTree = useMemo(
+    () => categorizeSpanTree(spanTree),
+    [spanTree]
+  );
+
+  // Flatten all spans for analysis
+  const allSpans = useMemo(
+    () => flattenSpans(categorizedTree),
+    [categorizedTree]
+  );
+
+  // Calculate statistics for Info tab
+  const categoryStats = useMemo(
+    () => calculateCategoryStats(allSpans, timeRange.duration),
+    [allSpans, timeRange.duration]
+  );
+
+  // Extract tool information for Info tab
+  const toolStats = useMemo(
+    () => extractToolStats(allSpans),
+    [allSpans]
+  );
+
+  // Auto-select first span when switching tabs
+  useEffect(() => {
+    if ((activeTab === 'tree' || activeTab === 'graph' || activeTab === 'timeline') && !selectedSpan && spanTree.length > 0) {
+      setSelectedSpan(spanTree[0]);
+    }
+  }, [activeTab, selectedSpan, spanTree]);
 
   // Auto-expand root spans
   useEffect(() => {
@@ -156,9 +200,9 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <span className="font-mono">trace-{trace.traceId.slice(0, 8)}</span>
               <Button
-                variant="outline"
+                variant="ghost"
                 size="icon"
-                className="h-6 w-6 border-border hover:bg-muted hover:border-muted-foreground/30"
+                className="h-6 w-6"
                 onClick={handleCopyTraceId}
                 title="Copy full trace ID"
               >
@@ -192,22 +236,37 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
           </div>
         </div>
 
-        {/* Primary Metrics Row */}
-        <div className="flex items-center gap-4 text-sm mb-3">
-          <Badge 
-            variant="outline" 
-            className={trace.hasErrors 
-              ? "bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800" 
-              : "bg-green-100 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800"
-            }
-          >
-            {trace.hasErrors ? 'ERROR' : 'OK'}: {spanStats.byStatus.error > 0 ? spanStats.byStatus.error : spanStats.byStatus.ok}
-          </Badge>
-          <span className="font-semibold">{trace.spanCount} spans</span>
-          <span className="font-semibold text-amber-700 dark:text-amber-400">{formatDuration(trace.duration)}</span>
-          <span className="text-muted-foreground">duration</span>
-          <span className="font-medium">{trace.serviceName}</span>
-          <span className="text-muted-foreground">{trace.startTime.toLocaleString()}</span>
+        {/* Primary Metrics Row - Compact design with status icon */}
+        <div className="flex items-center gap-3 text-sm mb-3">
+          {/* Status icon + metrics in one line */}
+          <div className="flex items-center gap-2">
+            {trace.hasErrors ? (
+              <XCircle size={16} className="text-red-700 dark:text-red-400 flex-shrink-0" />
+            ) : (
+              <CheckCircle2 size={16} className="text-green-700 dark:text-green-400 flex-shrink-0" />
+            )}
+            <span className="font-medium">{trace.spanCount} spans</span>
+            <span className="text-muted-foreground">•</span>
+            <span className="font-medium text-amber-700 dark:text-amber-400">{formatDuration(trace.duration)}</span>
+            {trace.hasErrors && (
+              <>
+                <span className="text-muted-foreground">•</span>
+                <span className="text-red-700 dark:text-red-400 font-medium">
+                  {spanStats.byStatus.error} {spanStats.byStatus.error === 1 ? 'error' : 'errors'}
+                </span>
+              </>
+            )}
+          </div>
+          
+          {/* Divider */}
+          <div className="h-4 w-px bg-border" />
+          
+          {/* Service and timestamp - more compact */}
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span>{trace.serviceName}</span>
+            <span>•</span>
+            <span>{trace.startTime.toLocaleString()}</span>
+          </div>
         </div>
 
         {/* Secondary Info: Categories */}
@@ -238,60 +297,98 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
         <TabsList className="w-full justify-start rounded-none border-b bg-card h-auto p-0">
           <TabsTrigger
-            value="traces"
+            value="tree"
             className="rounded-none border-b-2 border-transparent data-[state=active]:border-opensearch-blue data-[state=active]:text-opensearch-blue"
           >
             <Activity size={14} className="mr-2" />
-            Traces
-            <Badge variant="secondary" className="ml-2">{trace.spanCount}</Badge>
+            Trace tree
           </TabsTrigger>
           <TabsTrigger
-            value="details"
+            value="graph"
+            className="rounded-none border-b-2 border-transparent data-[state=active]:border-opensearch-blue data-[state=active]:text-opensearch-blue"
+          >
+            <ArrowRight size={14} className="mr-2" />
+            Agent graph
+          </TabsTrigger>
+          <TabsTrigger
+            value="timeline"
+            className="rounded-none border-b-2 border-transparent data-[state=active]:border-opensearch-blue data-[state=active]:text-opensearch-blue"
+          >
+            <Clock size={14} className="mr-2" />
+            Timeline
+          </TabsTrigger>
+          <TabsTrigger
+            value="info"
             className="rounded-none border-b-2 border-transparent data-[state=active]:border-opensearch-blue data-[state=active]:text-opensearch-blue"
           >
             <MessageSquare size={14} className="mr-2" />
-            Input/Output
+            Info
           </TabsTrigger>
         </TabsList>
 
-        {/* Traces Tab */}
-        <TabsContent value="traces" className="flex-1 mt-0 overflow-hidden flex flex-col">
-          {/* View Toggle & Fullscreen */}
-          <div className="flex items-center justify-between p-3 border-b">
-            <ViewToggle viewMode={viewMode} onChange={setViewMode} />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setFullscreenOpen(true)}
-              className="gap-1.5"
-            >
-              <Maximize2 size={14} />
-              Fullscreen
-            </Button>
-          </div>
+        {/* Trace Tree Tab */}
+        <TabsContent value="tree" className="flex-1 mt-0 overflow-hidden">
+          <TraceVisualization
+            spanTree={spanTree}
+            timeRange={timeRange}
+            initialViewMode="timeline"
+            onViewModeChange={setViewMode}
+            showViewToggle={false}
+            selectedSpan={selectedSpan}
+            onSelectSpan={setSelectedSpan}
+            expandedSpans={expandedSpans}
+            onToggleExpand={handleToggleExpand}
+            showSpanDetailsPanel={true}
+          />
+        </TabsContent>
 
-          {/* Trace Visualization */}
-          <div className="flex-1 overflow-hidden">
-            <TraceVisualization
-              spanTree={spanTree}
-              timeRange={timeRange}
-              initialViewMode={viewMode}
-              onViewModeChange={setViewMode}
-              showViewToggle={false}
-              selectedSpan={selectedSpan}
-              onSelectSpan={setSelectedSpan}
-              expandedSpans={expandedSpans}
-              onToggleExpand={handleToggleExpand}
-              showSpanDetailsPanel={true}
-            />
+        {/* Agent Graph Tab - Service map on left, span details on right */}
+        <TabsContent value="graph" className="flex-1 mt-0 overflow-hidden">
+          <TraceVisualization
+            spanTree={spanTree}
+            timeRange={timeRange}
+            initialViewMode="flow"
+            onViewModeChange={setViewMode}
+            showViewToggle={false}
+            selectedSpan={selectedSpan}
+            onSelectSpan={setSelectedSpan}
+            expandedSpans={expandedSpans}
+            onToggleExpand={handleToggleExpand}
+            showSpanDetailsPanel={true}
+          />
+        </TabsContent>
+
+        {/* Timeline Tab - Shows Gantt chart */}
+        <TabsContent value="timeline" className="flex-1 mt-0 overflow-hidden">
+          <div className="flex h-full">
+            <div className="flex-1 overflow-auto p-4">
+              <TraceTimelineChart
+                spanTree={spanTree}
+                timeRange={timeRange}
+                selectedSpan={selectedSpan}
+                onSelectSpan={setSelectedSpan}
+                expandedSpans={expandedSpans}
+                onToggleExpand={handleToggleExpand}
+              />
+            </div>
+            {selectedSpan && (
+              <div className="w-[400px] border-l shrink-0">
+                <SpanDetailsPanel
+                  span={selectedSpan}
+                  onClose={() => setSelectedSpan(null)}
+                />
+              </div>
+            )}
           </div>
         </TabsContent>
 
-        {/* Input/Output Tab */}
-        <TabsContent value="details" className="flex-1 mt-0 overflow-hidden">
+        {/* Info Tab - Summary stats, tools, time distribution */}
+        <TabsContent value="info" className="flex-1 mt-0 overflow-hidden">
           <ScrollArea className="h-full">
             <div className="p-4 space-y-4">
-              <SpanInputOutput spans={trace.spans} />
+              <SummaryStatsGrid categoryStats={categoryStats} toolStats={toolStats} />
+              <ToolsUsedSection toolStats={toolStats} />
+              <TimeDistributionBar stats={categoryStats} totalDuration={timeRange.duration} />
             </div>
           </ScrollArea>
         </TabsContent>

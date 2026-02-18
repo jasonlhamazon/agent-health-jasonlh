@@ -11,9 +11,12 @@
  */
 
 import React, { useState, useCallback, useEffect } from 'react';
+import { PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { Span, TimeRange } from '@/types';
+import { Button } from '@/components/ui/button';
 import ViewToggle, { ViewMode } from './ViewToggle';
 import TraceTimelineChart from './TraceTimelineChart';
+import TraceTreeTable from './TraceTreeTable';
 import TraceFlowView from './TraceFlowView';
 import SpanDetailsPanel from './SpanDetailsPanel';
 
@@ -56,6 +59,13 @@ const TraceVisualization: React.FC<TraceVisualizationProps> = ({
 
   // Internal state for expanded spans (used if not externally controlled)
   const [internalExpandedSpans, setInternalExpandedSpans] = useState<Set<string>>(new Set());
+
+  // State for details panel collapse
+  const [detailsCollapsed, setDetailsCollapsed] = useState(false);
+
+  // State for resizable divider
+  const [timelineWidth, setTimelineWidth] = useState(50); // percentage - default 50%
+  const [isResizing, setIsResizing] = useState(false);
 
   // Use external or internal state
   const selectedSpan = externalSelectedSpan !== undefined ? externalSelectedSpan : internalSelectedSpan;
@@ -102,6 +112,45 @@ const TraceVisualization: React.FC<TraceVisualizationProps> = ({
     setViewMode(initialViewMode);
   }, [initialViewMode]);
 
+  // Handle resize
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing) return;
+      
+      const container = document.querySelector('.timeline-container');
+      if (!container) return;
+      
+      const rect = container.getBoundingClientRect();
+      const newWidth = ((e.clientX - rect.left) / rect.width) * 100;
+      
+      // Constrain between 40% and 70% to ensure tree displays nicely
+      setTimelineWidth(Math.max(40, Math.min(70, newWidth)));
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'ew-resize';
+      document.body.style.userSelect = 'none';
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing]);
+
   if (spanTree.length === 0) {
     return (
       <div className="h-full flex items-center justify-center text-muted-foreground">
@@ -122,7 +171,7 @@ const TraceVisualization: React.FC<TraceVisualizationProps> = ({
       {/* View Content */}
       <div className="flex-1 overflow-hidden">
         {viewMode === 'flow' ? (
-          <div style={{ height }} className="w-full">
+          <div className="h-full w-full">
             <TraceFlowView
               spanTree={spanTree}
               timeRange={timeRange}
@@ -130,7 +179,68 @@ const TraceVisualization: React.FC<TraceVisualizationProps> = ({
               onSelectSpan={setSelectedSpan}
             />
           </div>
+        ) : showSpanDetailsPanel ? (
+          /* Side-by-side layout for timeline with details panel */
+          <div className="flex h-full timeline-container relative">
+            {/* Tree table on left */}
+            <div 
+              className="overflow-auto p-4 border-r"
+              style={{ 
+                width: detailsCollapsed ? '100%' : `${timelineWidth}%`
+              }}
+            >
+              <TraceTreeTable
+                spanTree={spanTree}
+                selectedSpan={selectedSpan}
+                onSelect={setSelectedSpan}
+                expandedSpans={expandedSpans}
+                onToggleExpand={handleToggleExpand}
+              />
+            </div>
+            
+            {/* Resizable divider */}
+            {!detailsCollapsed && selectedSpan && (
+              <div
+                onMouseDown={handleMouseDown}
+                className="absolute top-0 bottom-0 w-1 cursor-ew-resize hover:bg-opensearch-blue/50 active:bg-opensearch-blue transition-colors z-10"
+                style={{
+                  left: `${timelineWidth}%`,
+                  background: isResizing ? 'hsl(var(--primary))' : 'transparent',
+                }}
+              >
+                <div className="absolute left-0 top-0 bottom-0 w-4 -translate-x-1.5" />
+              </div>
+            )}
+            
+            {/* Details panel on right */}
+            {!detailsCollapsed && selectedSpan ? (
+              <div 
+                className="overflow-auto relative"
+                style={{ width: `${100 - timelineWidth}%` }}
+              >
+                <SpanDetailsPanel
+                  span={selectedSpan}
+                  onClose={() => setSelectedSpan(null)}
+                  onCollapse={() => setDetailsCollapsed(true)}
+                />
+              </div>
+            ) : detailsCollapsed && selectedSpan ? (
+              /* Collapsed state - show expand button */
+              <div className="w-12 border-l flex items-start justify-center pt-2 bg-muted/30">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 hover:bg-muted"
+                  onClick={() => setDetailsCollapsed(false)}
+                  title="Expand details panel"
+                >
+                  <PanelRightOpen size={14} />
+                </Button>
+              </div>
+            ) : null}
+          </div>
         ) : (
+          /* Full width timeline without details panel */
           <div className="p-4 h-full overflow-auto">
             <TraceTimelineChart
               spanTree={spanTree}
@@ -143,16 +253,6 @@ const TraceVisualization: React.FC<TraceVisualizationProps> = ({
           </div>
         )}
       </div>
-
-      {/* Span Details Panel (for timeline mode when enabled) */}
-      {showSpanDetailsPanel && viewMode === 'timeline' && selectedSpan && (
-        <div className="border-t">
-          <SpanDetailsPanel
-            span={selectedSpan}
-            onClose={() => setSelectedSpan(null)}
-          />
-        </div>
-      )}
     </div>
   );
 };
