@@ -65,24 +65,26 @@ test.describe('Benchmark Editor', () => {
   });
 
   test('should have Cancel button', async ({ page }) => {
-    const cancelButton = page.locator('button:has-text("Cancel")');
+    // Use .last() to target the editor's Cancel button, not the benchmark card's cancel-run button
+    const cancelButton = page.getByRole('button', { name: 'Cancel' }).last();
     await expect(cancelButton).toBeVisible();
   });
 
   test('should close editor when clicking Cancel', async ({ page }) => {
-    await page.click('button:has-text("Cancel")');
+    // Use .last() to target the editor's Cancel button (the card's cancel-run button is behind the modal overlay)
+    await page.getByRole('button', { name: 'Cancel' }).last().click();
     await expect(page.locator('[data-testid="benchmarks-page"]')).toBeVisible();
   });
 
   test('should have name input field', async ({ page }) => {
     // Look for name input in first step
-    const nameInput = page.locator('input[placeholder*="name"], input#name, input').first();
+    const nameInput = page.locator('input#name');
     await expect(nameInput).toBeVisible();
   });
 
   test('should enable navigation to next step after entering name', async ({ page }) => {
     // Fill in name
-    const nameInput = page.locator('input').first();
+    const nameInput = page.locator('input#name');
     await nameInput.fill('E2E Test Benchmark');
 
     // Next button should exist
@@ -322,17 +324,14 @@ test.describe('Import JSON on Benchmarks Page', () => {
     await fileInput.setInputFiles(fixturePath);
 
     // Should navigate to the benchmark runs page after successful import
-    // Wait for navigation - URL should change to /benchmarks/<id>/runs
-    await page.waitForURL(/\/benchmarks\/bench-.*\/runs/, { timeout: 15000 }).catch(() => {
-      // If navigation didn't happen, check if there was an error
-    });
-
-    const url = page.url();
-    const navigated = /\/benchmarks\/bench-.*\/runs/.test(url);
-    const hasError = await page.locator('text=Import Failed').isVisible().catch(() => false);
+    // Race navigation against error dialog - whichever comes first
+    const navigationOrError = await Promise.race([
+      page.waitForURL(/\/benchmarks\/bench-.*\/runs/, { timeout: 15000 }).then(() => 'navigated'),
+      page.locator('text=Import Failed').waitFor({ state: 'visible', timeout: 15000 }).then(() => 'error'),
+    ]).catch(() => 'timeout');
 
     // Either successfully navigated or got an expected error (e.g., storage not configured)
-    expect(navigated || hasError).toBeTruthy();
+    expect(navigationOrError === 'navigated' || navigationOrError === 'error').toBeTruthy();
   });
 
   test('should show "Importing..." text while import is in progress', async ({ page }) => {
