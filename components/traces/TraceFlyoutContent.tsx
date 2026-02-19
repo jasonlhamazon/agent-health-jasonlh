@@ -38,8 +38,14 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Span, TimeRange } from '@/types';
-import { processSpansIntoTree, calculateTimeRange } from '@/services/traces';
+import { processSpansIntoTree, calculateTimeRange, getCategoryColors } from '@/services/traces';
 import { formatDuration } from '@/services/traces/utils';
 import TraceVisualization from './TraceVisualization';
 import TraceTimelineChart from './TraceTimelineChart';
@@ -58,6 +64,7 @@ import {
   extractToolStats,
 } from '@/services/traces/traceStats';
 import { categorizeSpanTree } from '@/services/traces/spanCategorization';
+import { cn } from '@/lib/utils';
 
 interface TraceTableRow {
   traceId: string;
@@ -85,6 +92,7 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
   const [expandedSpans, setExpandedSpans] = useState<Set<string>>(new Set());
   const [fullscreenOpen, setFullscreenOpen] = useState(false);
   const [copiedTraceId, setCopiedTraceId] = useState(false);
+  const [expandedSummary, setExpandedSummary] = useState<string | null>(null);
 
   // Process spans into tree
   const spanTree = useMemo(() => processSpansIntoTree(trace.spans), [trace.spans]);
@@ -184,6 +192,69 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
     return { byStatus, byCategory };
   }, [trace.spans]);
 
+  // Get detailed breakdown for each category
+  const getCategoryDetails = (category: string) => {
+    const spans = trace.spans.filter(span => {
+      const name = span.name.toLowerCase();
+      if (category === 'agent') return name.includes('agent');
+      if (category === 'llm') return name.includes('llm') || name.includes('bedrock') || name.includes('converse');
+      if (category === 'tool') return name.includes('tool') || span.attributes?.['gen_ai.tool.name'];
+      if (category === 'error') return span.status === 'ERROR';
+      return false;
+    });
+
+    // For tools, extract unique tool names and their call counts
+    if (category === 'tool') {
+      const toolCounts = spans.reduce((acc, span) => {
+        const toolName = span.attributes?.['gen_ai.tool.name'] as string || span.name;
+        acc[toolName] = (acc[toolName] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      return Object.entries(toolCounts).map(([name, count]) => ({
+        name,
+        count,
+        duration: spans
+          .filter(s => (s.attributes?.['gen_ai.tool.name'] || s.name) === name)
+          .reduce((sum, s) => sum + (s.endTime - s.startTime), 0),
+      }));
+    }
+
+    // For other categories, group by span name
+    const nameCounts = spans.reduce((acc, span) => {
+      acc[span.name] = (acc[span.name] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+
+    return Object.entries(nameCounts).map(([name, count]) => ({
+      name,
+      count,
+      duration: spans
+        .filter(s => s.name === name)
+        .reduce((sum, s) => sum + (s.endTime - s.startTime), 0),
+    }));
+  };
+
+  // Get color classes for category detail pills
+  const getCategoryDetailColors = (category: string) => {
+    switch (category) {
+      case 'agent':
+        return 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700';
+      case 'llm':
+        return 'bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-700';
+      case 'tool':
+        return 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700';
+      case 'error':
+        return 'bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700';
+      default:
+        return 'bg-muted text-foreground border-border';
+    }
+  };
+
+  const handleSummaryClick = (category: string) => {
+    setExpandedSummary(expandedSummary === category ? null : category);
+  };
+
   return (
     <div className="h-full flex flex-col">
       {/* Compact Header */}
@@ -236,15 +307,10 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
           </div>
         </div>
 
-        {/* Primary Metrics Row - Compact design with status icon */}
+        {/* Unified Metrics Row - All key metrics as pills */}
         <div className="flex items-center gap-3 text-sm mb-3">
-          {/* Status icon + metrics in one line */}
+          {/* Core metrics */}
           <div className="flex items-center gap-2">
-            {trace.hasErrors ? (
-              <XCircle size={16} className="text-red-700 dark:text-red-400 flex-shrink-0" />
-            ) : (
-              <CheckCircle2 size={16} className="text-green-700 dark:text-green-400 flex-shrink-0" />
-            )}
             <span className="font-medium">{trace.spanCount} spans</span>
             <span className="text-muted-foreground">•</span>
             <span className="font-medium text-amber-700 dark:text-amber-400">{formatDuration(trace.duration)}</span>
@@ -261,34 +327,196 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
           {/* Divider */}
           <div className="h-4 w-px bg-border" />
           
-          {/* Service and timestamp - more compact */}
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span>{trace.serviceName}</span>
-            <span>•</span>
-            <span>{trace.startTime.toLocaleString()}</span>
+          {/* Start time */}
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="text-muted-foreground">Start time:</span>
+            <span className="font-medium">{trace.startTime.toLocaleString()}</span>
           </div>
         </div>
 
-        {/* Secondary Info: Categories */}
-        <div className="flex items-center gap-2 text-xs">
-          <span className="text-muted-foreground">Categories:</span>
-          {spanStats.byCategory.agent > 0 && (
-            <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800">
-              <Bot size={10} className="mr-1" />
-              Agent: {spanStats.byCategory.agent}
-            </Badge>
-          )}
-          {spanStats.byCategory.llm > 0 && (
-            <Badge variant="outline" className="bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-900/30 dark:text-purple-400 dark:border-purple-800">
-              <MessageSquare size={10} className="mr-1" />
-              LLM: {spanStats.byCategory.llm}
-            </Badge>
-          )}
-          {spanStats.byCategory.tool > 0 && (
-            <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-900/30 dark:text-amber-400 dark:border-amber-800">
-              <Wrench size={10} className="mr-1" />
-              Tool: {spanStats.byCategory.tool}
-            </Badge>
+        {/* Trace Summary Pills - Interactive and expandable */}
+        <div className="space-y-1">
+          {/* Compact Time Distribution Bar - No legend, hover for details */}
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground font-medium text-xs whitespace-nowrap flex items-center gap-1">
+              <Clock size={12} />
+              Distribution:
+            </span>
+            <div className="flex-1">
+              {/* Bar with comprehensive tooltip */}
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="h-5 rounded-md overflow-hidden flex bg-muted/30 border cursor-help">
+                      {categoryStats.map((stat) => {
+                        const colors = getCategoryColors(stat.category);
+                        const widthPercent = Math.max(stat.percentage, 0.5);
+
+                        return (
+                          <div
+                            key={stat.category}
+                            className={cn('h-full flex items-center justify-center text-[10px] font-medium', colors.bar)}
+                            style={{ width: `${widthPercent}%` }}
+                          >
+                            {stat.percentage >= 8 && (
+                              <span className="text-white/90 truncate px-1">
+                                {stat.percentage >= 12 ? stat.category : stat.category.slice(0, 3)}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent 
+                    side="bottom" 
+                    className="bg-gray-900 dark:bg-gray-950 border-gray-800 p-3 max-w-xs text-white [&>svg]:fill-gray-900 dark:[&>svg]:fill-gray-950"
+                  >
+                    <div className="space-y-1.5">
+                      <div className="text-xs font-semibold mb-2">Time Distribution</div>
+                      {categoryStats.map((stat) => {
+                        const colors = getCategoryColors(stat.category);
+                        const formattedPercent = stat.percentage < 1 
+                          ? stat.percentage.toFixed(1) 
+                          : stat.percentage.toFixed(0);
+                        return (
+                          <div key={stat.category} className="flex items-center justify-between gap-4 text-xs">
+                            <div className="flex items-center gap-2">
+                              <div className={cn('w-2.5 h-2.5 rounded-sm flex-shrink-0', colors.bar)} />
+                              <span className="font-medium">{stat.category}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-gray-300">
+                              <span>{formatDuration(stat.totalDuration)}</span>
+                              <span className="text-gray-400">({formattedPercent}%)</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          </div>
+
+          {/* Span Category Pills - Reduced padding */}
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-muted-foreground font-medium whitespace-nowrap">Span category:</span>
+            <div className="flex items-center gap-2 flex-1">
+              {spanStats.byCategory.agent > 0 && (
+                <button
+                  onClick={() => handleSummaryClick('agent')}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border-2 transition-all cursor-pointer flex-1',
+                    expandedSummary === 'agent'
+                      ? 'bg-blue-100 text-blue-700 border-blue-400 dark:bg-blue-900/70 dark:text-blue-300 dark:border-blue-600'
+                      : 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800 hover:bg-blue-100 hover:border-blue-400 hover:shadow-md dark:hover:bg-blue-900/70 dark:hover:border-blue-600'
+                  )}
+                >
+                  <Bot size={11} className="flex-shrink-0" />
+                  <span className="font-medium">{spanStats.byCategory.agent}</span>
+                  <span className="font-normal">Agent</span>
+                  {expandedSummary === 'agent' ? (
+                    <ChevronDown size={11} className="ml-auto" />
+                  ) : (
+                    <ChevronRight size={11} className="ml-auto" />
+                  )}
+                </button>
+              )}
+              {spanStats.byCategory.llm > 0 && (
+                <button
+                  onClick={() => handleSummaryClick('llm')}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border-2 transition-all cursor-pointer flex-1',
+                    expandedSummary === 'llm'
+                      ? 'bg-purple-100 text-purple-700 border-purple-400 dark:bg-purple-900/70 dark:text-purple-300 dark:border-purple-600'
+                      : 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/50 dark:text-purple-300 dark:border-purple-800 hover:bg-purple-100 hover:border-purple-400 hover:shadow-md dark:hover:bg-purple-900/70 dark:hover:border-purple-600'
+                  )}
+                >
+                  <MessageSquare size={11} className="flex-shrink-0" />
+                  <span className="font-medium">{spanStats.byCategory.llm}</span>
+                  <span className="font-normal">LLM</span>
+                  {expandedSummary === 'llm' ? (
+                    <ChevronDown size={11} className="ml-auto" />
+                  ) : (
+                    <ChevronRight size={11} className="ml-auto" />
+                  )}
+                </button>
+              )}
+              {spanStats.byCategory.tool > 0 && (
+                <button
+                  onClick={() => handleSummaryClick('tool')}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border-2 transition-all cursor-pointer flex-1',
+                    expandedSummary === 'tool'
+                      ? 'bg-amber-100 text-amber-700 border-amber-400 dark:bg-amber-900/70 dark:text-amber-300 dark:border-amber-600'
+                      : 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800 hover:bg-amber-100 hover:border-amber-400 hover:shadow-md dark:hover:bg-amber-900/70 dark:hover:border-amber-600'
+                  )}
+                >
+                  <Wrench size={11} className="flex-shrink-0" />
+                  <span className="font-medium">{spanStats.byCategory.tool}</span>
+                  <span className="font-normal">Tool</span>
+                  {expandedSummary === 'tool' ? (
+                    <ChevronDown size={11} className="ml-auto" />
+                  ) : (
+                    <ChevronRight size={11} className="ml-auto" />
+                  )}
+                </button>
+              )}
+              {trace.hasErrors && (
+                <button
+                  onClick={() => handleSummaryClick('error')}
+                  className={cn(
+                    'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border-2 transition-all cursor-pointer flex-1',
+                    expandedSummary === 'error'
+                      ? 'bg-red-100 text-red-700 border-red-400 dark:bg-red-900/70 dark:text-red-300 dark:border-red-600'
+                      : 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/50 dark:text-red-300 dark:border-red-800 hover:bg-red-100 hover:border-red-400 hover:shadow-md dark:hover:bg-red-900/70 dark:hover:border-red-600'
+                  )}
+                >
+                  <XCircle size={11} className="flex-shrink-0" />
+                  <span className="font-medium">{spanStats.byStatus.error}</span>
+                  <span className="font-normal">Error{spanStats.byStatus.error !== 1 ? 's' : ''}</span>
+                  {expandedSummary === 'error' ? (
+                    <ChevronDown size={11} className="ml-auto" />
+                  ) : (
+                    <ChevronRight size={11} className="ml-auto" />
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Expanded Details Container - Below Span Category */}
+          {expandedSummary && (
+            <div className="flex items-start gap-2">
+              <span className="text-muted-foreground font-medium text-xs whitespace-nowrap invisible">Span category:</span>
+              <div className="flex-1 p-2.5 rounded-md bg-muted/50 border relative">
+                <button
+                  onClick={() => setExpandedSummary(null)}
+                  className="absolute top-2 right-2 p-1 rounded-md hover:bg-background/80 transition-colors"
+                  title="Close"
+                >
+                  <X size={14} className="text-muted-foreground" />
+                </button>
+                <div className="flex flex-wrap gap-2 pr-8">
+                  {getCategoryDetails(expandedSummary).map((item, idx) => (
+                    <div
+                      key={idx}
+                      className={cn(
+                        'inline-flex items-center gap-2 px-2.5 py-1 rounded-md border text-xs font-medium',
+                        getCategoryDetailColors(expandedSummary)
+                      )}
+                    >
+                      <span>{item.name}</span>
+                      {item.count > 1 && (
+                        <span className="opacity-70">×{item.count}</span>
+                      )}
+                      <span className="opacity-70">{formatDuration(item.duration)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </div>
