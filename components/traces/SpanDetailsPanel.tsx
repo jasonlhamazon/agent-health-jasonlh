@@ -14,7 +14,7 @@ import React, { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { PanelRightClose, Layers, ChevronRight, ChevronDown, Info, MessageSquare, Bot, PieChart, AlertTriangle } from 'lucide-react';
+import { PanelRightClose, Layers, ChevronRight, ChevronDown, Info, MessageSquare, Bot, PieChart, AlertTriangle, Copy, Check } from 'lucide-react';
 import { Span, CategorizedSpan } from '@/types';
 import { formatDuration, getKeyAttributes } from '@/services/traces/utils';
 import { checkOTelCompliance } from '@/services/traces/spanCategorization';
@@ -44,16 +44,29 @@ const SpanDetailsPanel: React.FC<SpanDetailsPanelProps> = ({ span, onClose, onCo
                      span.attributes?.['gen_ai.completion'] ||
                      llmResponseEvent?.attributes?.['llm.completion'];
 
-  const [expandedSections, setExpandedSections] = useState({
+  // Initialize expanded sections - use useMemo to ensure it updates when span changes
+  const [expandedSections, setExpandedSections] = useState(() => ({
     input: !!inputData,  // Auto-open if data exists
     output: !!outputData,  // Auto-open if data exists
     otelCompliance: true,
     contextWindow: true,
     attributes: false
-  });
+  }));
+
+  // Update expanded sections when span changes and data becomes available
+  React.useEffect(() => {
+    if (inputData && !expandedSections.input) {
+      setExpandedSections(prev => ({ ...prev, input: true }));
+    }
+    if (outputData && !expandedSections.output) {
+      setExpandedSections(prev => ({ ...prev, output: true }));
+    }
+  }, [inputData, outputData]);
 
   const [inputViewMode, setInputViewMode] = useState<'pretty' | 'raw'>('pretty');
   const [outputViewMode, setOutputViewMode] = useState<'pretty' | 'raw'>('pretty');
+  const [copiedInput, setCopiedInput] = useState(false);
+  const [copiedOutput, setCopiedOutput] = useState(false);
 
   const spanDuration = new Date(span.endTime).getTime() - new Date(span.startTime).getTime();
 
@@ -74,6 +87,29 @@ const SpanDetailsPanel: React.FC<SpanDetailsPanelProps> = ({ span, onClose, onCo
 
   const toggleSection = (section: keyof typeof expandedSections) => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
+
+  // Copy handlers
+  const handleCopyInput = async () => {
+    try {
+      const textToCopy = formatData(inputData, inputViewMode);
+      await navigator.clipboard.writeText(textToCopy);
+      setCopiedInput(true);
+      setTimeout(() => setCopiedInput(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy input:', err);
+    }
+  };
+
+  const handleCopyOutput = async () => {
+    try {
+      const textToCopy = formatData(outputData, outputViewMode);
+      await navigator.clipboard.writeText(textToCopy);
+      setCopiedOutput(true);
+      setTimeout(() => setCopiedOutput(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy output:', err);
+    }
   };
 
   // Helper to format data for display
@@ -97,9 +133,9 @@ const SpanDetailsPanel: React.FC<SpanDetailsPanelProps> = ({ span, onClose, onCo
   };
 
   return (
-    <div className="h-full flex flex-col overflow-hidden bg-muted/30" data-testid="span-details-panel">
+    <div className="h-full flex flex-col overflow-hidden min-w-0 bg-muted/30 border-l rounded-tr-lg" data-testid="span-details-panel">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 border-b bg-background shrink-0">
+      <div className="flex items-center justify-between px-4 py-2 border-b shrink-0 rounded-tr-lg">
         <div className="min-w-0 flex-1 flex items-center gap-2">
           <h3 className="text-sm font-semibold truncate" data-testid="span-details-name">
             {span.name}
@@ -114,11 +150,11 @@ const SpanDetailsPanel: React.FC<SpanDetailsPanelProps> = ({ span, onClose, onCo
       </div>
 
       {/* Content */}
-      <ScrollArea className="flex-1">
-        <div className="p-4 space-y-6">
+      <ScrollArea className="flex-1 min-w-0">
+        <div className="p-4 space-y-6 min-w-0">
           {/* INPUT SECTION - Moved to top, auto-open if data exists */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
+          <div className="space-y-2 min-w-0">
+            <div className="flex items-center justify-between min-w-0 gap-2">
               <button
                 className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-muted-foreground hover:text-foreground"
                 onClick={() => toggleSection('input')}
@@ -127,15 +163,17 @@ const SpanDetailsPanel: React.FC<SpanDetailsPanelProps> = ({ span, onClose, onCo
                 <MessageSquare size={10} /> Input
               </button>
               {expandedSections.input && inputData && (
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 shrink-0">
                   <Button
-                    variant={inputViewMode === 'pretty' ? 'default' : 'ghost'}
-                    size="sm"
-                    className="h-6 text-[10px] px-2"
-                    onClick={() => setInputViewMode('pretty')}
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={handleCopyInput}
+                    title="Copy to clipboard"
                   >
-                    Pretty
+                    {copiedInput ? <Check size={12} className="text-green-700 dark:text-green-400" /> : <Copy size={12} />}
                   </Button>
+                  <div className="h-4 w-px bg-border" />
                   <Button
                     variant={inputViewMode === 'raw' ? 'default' : 'ghost'}
                     size="sm"
@@ -144,14 +182,24 @@ const SpanDetailsPanel: React.FC<SpanDetailsPanelProps> = ({ span, onClose, onCo
                   >
                     Raw
                   </Button>
+                  <Button
+                    variant={inputViewMode === 'pretty' ? 'default' : 'ghost'}
+                    size="sm"
+                    className="h-6 text-[10px] px-2"
+                    onClick={() => setInputViewMode('pretty')}
+                  >
+                    Pretty
+                  </Button>
                 </div>
               )}
             </div>
             {expandedSections.input && (
               inputData ? (
-                <pre className="max-h-64 overflow-auto rounded-md border bg-gray-50 dark:bg-slate-900 p-3 text-[11px] font-mono text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words w-full">
-                  {formatData(inputData, inputViewMode)}
-                </pre>
+                <div className="w-full max-h-64 overflow-auto rounded-md border border-border bg-muted/30 dark:bg-slate-900/50">
+                  <pre className="p-3 text-[11px] font-mono text-foreground m-0" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                    {formatData(inputData, inputViewMode)}
+                  </pre>
+                </div>
               ) : (
                 <div className="text-xs text-muted-foreground italic p-3 bg-muted/30 rounded-md border border-dashed">
                   No input data available for this span
@@ -161,8 +209,8 @@ const SpanDetailsPanel: React.FC<SpanDetailsPanelProps> = ({ span, onClose, onCo
           </div>
 
           {/* OUTPUT SECTION - Moved to top, auto-open if data exists */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
+          <div className="space-y-2 min-w-0">
+            <div className="flex items-center justify-between min-w-0 gap-2">
               <button
                 className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-muted-foreground hover:text-foreground"
                 onClick={() => toggleSection('output')}
@@ -171,15 +219,17 @@ const SpanDetailsPanel: React.FC<SpanDetailsPanelProps> = ({ span, onClose, onCo
                 <Bot size={10} /> Output
               </button>
               {expandedSections.output && outputData && (
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 shrink-0">
                   <Button
-                    variant={outputViewMode === 'pretty' ? 'default' : 'ghost'}
-                    size="sm"
-                    className="h-6 text-[10px] px-2"
-                    onClick={() => setOutputViewMode('pretty')}
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={handleCopyOutput}
+                    title="Copy to clipboard"
                   >
-                    Pretty
+                    {copiedOutput ? <Check size={12} className="text-green-700 dark:text-green-400" /> : <Copy size={12} />}
                   </Button>
+                  <div className="h-4 w-px bg-border" />
                   <Button
                     variant={outputViewMode === 'raw' ? 'default' : 'ghost'}
                     size="sm"
@@ -188,14 +238,24 @@ const SpanDetailsPanel: React.FC<SpanDetailsPanelProps> = ({ span, onClose, onCo
                   >
                     Raw
                   </Button>
+                  <Button
+                    variant={outputViewMode === 'pretty' ? 'default' : 'ghost'}
+                    size="sm"
+                    className="h-6 text-[10px] px-2"
+                    onClick={() => setOutputViewMode('pretty')}
+                  >
+                    Pretty
+                  </Button>
                 </div>
               )}
             </div>
             {expandedSections.output && (
               outputData ? (
-                <pre className="max-h-64 overflow-auto rounded-md border bg-gray-50 dark:bg-slate-900 p-3 text-[11px] font-mono text-gray-900 dark:text-gray-100 whitespace-pre-wrap break-words w-full">
-                  {formatData(outputData, outputViewMode)}
-                </pre>
+                <div className="w-full max-h-64 overflow-auto rounded-md border border-border bg-muted/30 dark:bg-slate-900/50">
+                  <pre className="p-3 text-[11px] font-mono text-foreground m-0" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                    {formatData(outputData, outputViewMode)}
+                  </pre>
+                </div>
               ) : (
                 <div className="text-xs text-muted-foreground italic p-3 bg-muted/30 rounded-md border border-dashed">
                   No output data available for this span
@@ -242,18 +302,18 @@ const SpanDetailsPanel: React.FC<SpanDetailsPanelProps> = ({ span, onClose, onCo
           {otelCompliance && !otelCompliance.isCompliant && (
             <div className="space-y-2">
               <button
-                className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-amber-500 hover:text-amber-400 w-full"
+                className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-amber-700 dark:text-amber-300 hover:text-amber-800 dark:hover:text-amber-200 w-full"
                 onClick={() => toggleSection('otelCompliance')}
               >
                 {expandedSections.otelCompliance ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
                 <AlertTriangle size={10} /> OTel Compliance
-                <Badge variant="outline" className="ml-auto text-[9px] h-4 px-1 text-amber-400 border-amber-500/50">
+                <Badge variant="outline" className="ml-auto text-[9px] h-4 px-1 bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30">
                   {otelCompliance.missingAttributes.length} missing
                 </Badge>
               </button>
               {expandedSections.otelCompliance && (
-                <div className="bg-amber-950/20 rounded-md p-3 space-y-2 border border-amber-900/30">
-                  <div className="text-[10px] text-amber-400/80">
+                <div className="bg-amber-50 dark:bg-amber-950/30 rounded-md p-3 space-y-2 border border-amber-200 dark:border-amber-800/50">
+                  <div className="text-[10px] text-amber-800 dark:text-amber-300">
                     Missing required OTel GenAI attributes:
                   </div>
                   <div className="flex flex-wrap gap-1">
@@ -261,7 +321,7 @@ const SpanDetailsPanel: React.FC<SpanDetailsPanelProps> = ({ span, onClose, onCo
                       <Badge
                         key={attr}
                         variant="outline"
-                        className="text-[9px] font-mono text-amber-400 border-amber-500/50 bg-amber-500/10"
+                        className="text-[9px] font-mono bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30"
                       >
                         {attr}
                       </Badge>
@@ -272,7 +332,7 @@ const SpanDetailsPanel: React.FC<SpanDetailsPanelProps> = ({ span, onClose, onCo
                       href="https://opentelemetry.io/docs/specs/semconv/gen-ai/"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-cyan-400 hover:underline"
+                      className="text-cyan-600 dark:text-cyan-400 hover:underline"
                     >
                       View OTel GenAI Semantic Conventions →
                     </a>
@@ -318,7 +378,7 @@ const SpanDetailsPanel: React.FC<SpanDetailsPanelProps> = ({ span, onClose, onCo
                   <tbody>
                     {allAttributes.map(([key, value]) => (
                       <tr key={key} className="border-b last:border-0 hover:bg-muted/30">
-                        <td className="p-2 text-muted-foreground font-medium bg-muted/50 border-r max-w-[150px] truncate align-top" title={key}>
+                        <td className="p-2 text-muted-foreground font-medium bg-muted/50 dark:bg-muted/50 border-r border-border max-w-[150px] truncate align-top" title={key}>
                           {key}
                         </td>
                         <td className="p-2 font-mono break-all">

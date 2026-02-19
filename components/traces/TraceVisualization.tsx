@@ -19,6 +19,7 @@ import TraceTimelineChart from './TraceTimelineChart';
 import TraceTreeTable from './TraceTreeTable';
 import TraceFlowView from './TraceFlowView';
 import SpanDetailsPanel from './SpanDetailsPanel';
+import TraceInfoView from './TraceInfoView';
 
 interface TraceVisualizationProps {
   spanTree: Span[];
@@ -36,6 +37,8 @@ interface TraceVisualizationProps {
   /** External expanded spans control (for timeline) */
   expandedSpans?: Set<string>;
   onToggleExpand?: (spanId: string) => void;
+  /** Optional Run ID to display in info view */
+  runId?: string;
 }
 
 const TraceVisualization: React.FC<TraceVisualizationProps> = ({
@@ -50,6 +53,7 @@ const TraceVisualization: React.FC<TraceVisualizationProps> = ({
   onSelectSpan: externalOnSelectSpan,
   expandedSpans: externalExpandedSpans,
   onToggleExpand: externalOnToggleExpand,
+  runId,
 }) => {
   // Internal state for view mode
   const [viewMode, setViewMode] = useState<ViewMode>(initialViewMode);
@@ -107,10 +111,22 @@ const TraceVisualization: React.FC<TraceVisualizationProps> = ({
     }
   }, [spanTree, externalExpandedSpans]);
 
+  // Auto-select first span when switching views or when no span is selected
+  useEffect(() => {
+    if (spanTree.length > 0 && !selectedSpan) {
+      setSelectedSpan(spanTree[0]);
+    }
+  }, [viewMode, spanTree, selectedSpan, setSelectedSpan]);
+
   // Sync view mode with external initial value when it changes
   useEffect(() => {
     setViewMode(initialViewMode);
   }, [initialViewMode]);
+
+  // Reset collapsed state when switching views
+  useEffect(() => {
+    setDetailsCollapsed(false);
+  }, [viewMode]);
 
   // Handle resize
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -170,7 +186,12 @@ const TraceVisualization: React.FC<TraceVisualizationProps> = ({
 
       {/* View Content */}
       <div className="flex-1 overflow-hidden">
-        {viewMode === 'flow' ? (
+        {viewMode === 'info' ? (
+          /* Info view - trace overview and statistics */
+          <div className="h-full w-full overflow-auto">
+            <TraceInfoView spanTree={spanTree} runId={runId} />
+          </div>
+        ) : viewMode === 'flow' ? (
           <div className="h-full w-full">
             <TraceFlowView
               spanTree={spanTree}
@@ -179,8 +200,62 @@ const TraceVisualization: React.FC<TraceVisualizationProps> = ({
               onSelectSpan={setSelectedSpan}
             />
           </div>
+        ) : viewMode === 'tree' || viewMode === 'gantt' ? (
+          /* Gantt chart timeline view - shown for 'tree' (Timeline button) and 'gantt' modes */
+          showSpanDetailsPanel ? (
+            <div className="flex h-full w-full min-w-0 overflow-hidden">
+              <div 
+                className="overflow-auto p-4 min-w-0"
+                style={{ 
+                  width: detailsCollapsed ? '100%' : '60%'
+                }}
+              >
+                <TraceTimelineChart
+                  spanTree={spanTree}
+                  timeRange={timeRange}
+                  selectedSpan={selectedSpan}
+                  onSelectSpan={setSelectedSpan}
+                  expandedSpans={expandedSpans}
+                  onToggleExpand={handleToggleExpand}
+                />
+              </div>
+              {!detailsCollapsed && selectedSpan ? (
+                <div className="w-[400px] border-l shrink-0 overflow-auto">
+                  <SpanDetailsPanel
+                    span={selectedSpan}
+                    onClose={() => setSelectedSpan(null)}
+                    onCollapse={() => setDetailsCollapsed(true)}
+                  />
+                </div>
+              ) : detailsCollapsed && selectedSpan ? (
+                /* Collapsed state - show expand button */
+                <div className="w-12 border-l flex items-start justify-center pt-2 bg-muted/30">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 hover:bg-muted"
+                    onClick={() => setDetailsCollapsed(false)}
+                    title="Expand details panel"
+                  >
+                    <PanelRightOpen size={14} />
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="p-4 h-full w-full overflow-auto">
+              <TraceTimelineChart
+                spanTree={spanTree}
+                timeRange={timeRange}
+                selectedSpan={selectedSpan}
+                onSelectSpan={setSelectedSpan}
+                expandedSpans={expandedSpans}
+                onToggleExpand={handleToggleExpand}
+              />
+            </div>
+          )
         ) : showSpanDetailsPanel ? (
-          /* Side-by-side layout for timeline with details panel */
+          /* Side-by-side layout for tree table with details panel - shown for 'timeline' (Trace Tree button) */
           <div className="flex h-full timeline-container relative">
             {/* Tree table on left */}
             <div 
@@ -240,11 +315,10 @@ const TraceVisualization: React.FC<TraceVisualizationProps> = ({
             ) : null}
           </div>
         ) : (
-          /* Full width timeline without details panel */
+          /* Full width tree table without details panel */
           <div className="p-4 h-full overflow-auto">
-            <TraceTimelineChart
+            <TraceTreeTable
               spanTree={spanTree}
-              timeRange={timeRange}
               selectedSpan={selectedSpan}
               onSelect={setSelectedSpan}
               expandedSpans={expandedSpans}

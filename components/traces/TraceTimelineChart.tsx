@@ -10,8 +10,10 @@
  * Renders spans as horizontal bars with expand/collapse tree hierarchy.
  */
 
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as echarts from 'echarts';
+import { ZoomIn, ZoomOut } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Span, TimeRange } from '@/types';
 import { getSpanColor, flattenVisibleSpans } from '@/services/traces';
 import { formatDuration } from '@/services/traces/utils';
@@ -23,7 +25,7 @@ interface TraceTimelineChartProps {
   spanTree: Span[];
   timeRange: TimeRange;
   selectedSpan: Span | null;
-  onSelect: (span: Span) => void;
+  onSelectSpan: (span: Span) => void;
   expandedSpans: Set<string>;
   onToggleExpand: (spanId: string) => void;
 }
@@ -32,12 +34,16 @@ const TraceTimelineChart: React.FC<TraceTimelineChartProps> = ({
   spanTree,
   timeRange,
   selectedSpan,
-  onSelect,
+  onSelectSpan,
   expandedSpans,
   onToggleExpand
 }) => {
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
+  const [zoomLevel, setZoomLevel] = useState(1); // Scale factor
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   // Flatten tree respecting expanded state
   const visibleSpans = useMemo(
@@ -56,6 +62,38 @@ const TraceTimelineChart: React.FC<TraceTimelineChartProps> = ({
 
   // Dynamic chart height based on visible spans
   const chartHeight = Math.max(100, visibleSpans.length * ROW_HEIGHT + 40);
+
+  // Handle zoom via CSS transform
+  const handleZoomIn = () => {
+    setZoomLevel(prev => Math.min(prev + 0.2, 3));
+  };
+
+  const handleZoomOut = () => {
+    setZoomLevel(prev => Math.max(prev - 0.2, 0.5));
+  };
+
+  // Handle mouse drag for panning
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isDragging) {
+      setPanOffset({
+        x: e.clientX - dragStart.x,
+        y: e.clientY - dragStart.y
+      });
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const handleMouseLeave = () => {
+    setIsDragging(false);
+  };
 
   useEffect(() => {
     if (!chartRef.current || visibleSpans.length === 0) return;
@@ -123,7 +161,7 @@ const TraceTimelineChart: React.FC<TraceTimelineChartProps> = ({
         textStyle: { color: '#e2e8f0' }
       },
       grid: {
-        left: 220,
+        left: 180,
         right: 20,
         top: 10,
         bottom: 30,
@@ -183,7 +221,7 @@ const TraceTimelineChart: React.FC<TraceTimelineChartProps> = ({
     chart.off('click');
     chart.on('click', (params: any) => {
       if (params.componentType === 'series' && params.data?.span) {
-        onSelect(params.data.span);
+        onSelectSpan(params.data.span);
       } else if (params.componentType === 'yAxis') {
         // Click on y-axis label to toggle expand
         const span = spanMap[params.value];
@@ -200,7 +238,7 @@ const TraceTimelineChart: React.FC<TraceTimelineChartProps> = ({
     return () => {
       window.removeEventListener('resize', handleResize);
     };
-  }, [visibleSpans, timeRange, selectedSpan, expandedSpans, spanMap, onSelect, onToggleExpand]);
+  }, [visibleSpans, timeRange, selectedSpan, expandedSpans, spanMap, onSelectSpan, onToggleExpand]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -220,12 +258,53 @@ const TraceTimelineChart: React.FC<TraceTimelineChartProps> = ({
   }, [chartHeight]);
 
   return (
-    <div
-      ref={chartRef}
-      style={{ height: chartHeight, width: '100%', minWidth: '600px' }}
-      className="bg-background"
-      data-testid="trace-timeline-chart"
-    />
+    <div 
+      className="relative overflow-hidden h-full"
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
+      style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+    >
+      {/* Zoom Controls */}
+      <div className="absolute top-1 right-1 z-10 flex flex-col gap-1 bg-card border rounded-lg shadow-lg p-0.5">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6"
+          onClick={handleZoomIn}
+          title="Zoom in"
+        >
+          <ZoomIn size={12} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6"
+          onClick={handleZoomOut}
+          title="Zoom out"
+        >
+          <ZoomOut size={12} />
+        </Button>
+      </div>
+
+      <div
+        style={{ 
+          transform: `scale(${zoomLevel}) translate(${panOffset.x / zoomLevel}px, ${panOffset.y / zoomLevel}px)`,
+          transformOrigin: 'top left',
+          transition: isDragging ? 'none' : 'transform 0.1s ease-out',
+          height: chartHeight,
+          width: '100%'
+        }}
+      >
+        <div
+          ref={chartRef}
+          style={{ height: chartHeight, width: '100%' }}
+          className="bg-background"
+          data-testid="trace-timeline-chart"
+        />
+      </div>
+    </div>
   );
 };
 
