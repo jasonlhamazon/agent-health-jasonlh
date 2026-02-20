@@ -52,7 +52,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
-import { getLabelColor, getLabelStyle, formatDate } from '@/lib/utils';
+import { getLabelColor, formatDate } from '@/lib/utils';
 import { getTheme } from '@/lib/theme';
 import { TestCaseEditor } from './TestCaseEditor';
 import { QuickRunModal } from './QuickRunModal';
@@ -113,7 +113,7 @@ const TestCaseCard = ({ testCase, runCount, onClick, onRun, onEdit, onDelete, is
                 <Badge 
                   key={label} 
                   variant="outline" 
-                  style={getLabelStyle(label, isDarkMode)}
+                  className={getLabelColor(label)}
                 >
                   {label}
                 </Badge>
