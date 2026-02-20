@@ -11,6 +11,18 @@ export default {
     './**/*.{js,ts,jsx,tsx}',
     '!./node_modules/**/*',
   ],
+  safelist: [
+    // Badge colors for dark mode
+    'dark:bg-blue-950/50',
+    'dark:text-blue-300',
+    'dark:border-blue-700/50',
+    'dark:bg-green-950/50',
+    'dark:text-green-300',
+    'dark:border-green-700/50',
+    'dark:bg-gray-800/50',
+    'dark:text-gray-400',
+    'dark:border-gray-700/50',
+  ],
   theme: {
   	extend: {
   		colors: {
