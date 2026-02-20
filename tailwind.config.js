@@ -5,7 +5,7 @@
 
 /** @type {import('tailwindcss').Config} */
 export default {
-  darkMode: ['class', 'class'],
+  darkMode: 'class',
   content: [
     './index.html',
     './**/*.{js,ts,jsx,tsx}',
@@ -42,6 +42,7 @@ export default {
   				'700': '#1d4ed8',
   				'800': '#1e40af',
   				'900': '#1e3a8a',
+  				'950': '#172554',
   			},
   			green: {
   				'50': '#f0fdf4',
@@ -54,6 +55,7 @@ export default {
   				'700': '#15803d',
   				'800': '#166534',
   				'900': '#14532d',
+  				'950': '#052e16',
   			},
   			red: {
   				'50': '#fef2f2',
