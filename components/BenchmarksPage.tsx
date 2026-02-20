@@ -577,13 +577,13 @@ export const BenchmarksPage: React.FC = () => {
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className="text-lg font-semibold truncate">{bench.name}</h3>
                         {isRunning && (
-                          <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-400 border-blue-500/30">
+                          <Badge variant="outline" className="text-xs bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30">
                             <Loader2 size={10} className="mr-1 animate-spin" />
                             Running
                           </Badge>
                         )}
                         {!isRunning && isCancelled && (
-                          <Badge variant="outline" className="text-xs bg-orange-500/10 text-orange-400 border-orange-500/30">
+                          <Badge variant="outline" className="text-xs bg-orange-100 text-orange-700 border-orange-300 dark:bg-orange-500/10 dark:text-orange-400 dark:border-orange-500/30">
                             <Ban size={10} className="mr-1" />
                             Cancelled
                           </Badge>

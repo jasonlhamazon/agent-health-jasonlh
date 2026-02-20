@@ -29,7 +29,7 @@ const TooltipContent = React.forwardRef<
       {...props}
     >
       {props.children}
-      <TooltipPrimitive.Arrow className="fill-primary" />
+      <TooltipPrimitive.Arrow className="fill-current" />
     </TooltipPrimitive.Content>
   </TooltipPrimitive.Portal>
 ))

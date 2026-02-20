@@ -12,12 +12,13 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as echarts from 'echarts';
-import { ZoomIn, ZoomOut } from 'lucide-react';
+import { ZoomIn, ZoomOut, ChevronRight, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Span, TimeRange } from '@/types';
 import { getSpanColor, flattenVisibleSpans } from '@/services/traces';
 import { formatDuration } from '@/services/traces/utils';
 import { truncate } from '@/lib/utils';
+import { getTheme } from '@/lib/theme';
 
 const ROW_HEIGHT = 20;
 
@@ -44,6 +45,15 @@ const TraceTimelineChart: React.FC<TraceTimelineChartProps> = ({
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  
+  // Aggro-style-edit: Theme-aware colors
+  const isDarkMode = getTheme() === 'dark';
+  const labelColor = isDarkMode ? 'rgb(203, 213, 225)' : 'rgb(51, 65, 81)';
+  const axisColor = isDarkMode ? 'rgb(71, 85, 105)' : 'rgb(203, 213, 225)';
+  const splitLineColor = isDarkMode ? 'rgb(30, 41, 59)' : 'rgb(226, 232, 240)';
+  const tooltipBg = isDarkMode ? 'rgba(30, 41, 59, 0.95)' : 'rgba(255, 255, 255, 0.95)';
+  const tooltipBorder = isDarkMode ? 'rgba(51, 65, 85, 0.5)' : 'rgba(203, 213, 225, 0.5)';
+  const tooltipText = isDarkMode ? 'rgb(226, 232, 240)' : 'rgb(30, 41, 59)';
 
   // Flatten tree respecting expanded state
   const visibleSpans = useMemo(
@@ -150,15 +160,18 @@ const TraceTimelineChart: React.FC<TraceTimelineChartProps> = ({
         formatter: (params: any) => {
           const span = params.data.span as Span;
           const duration = new Date(span.endTime).getTime() - new Date(span.startTime).getTime();
-          return `<div style="font-size:11px">
+          return `<div style="font-size:12px;font-family:'Rubik',sans-serif">
             <div style="font-weight:600;margin-bottom:4px">${span.name}</div>
             <div>Duration: ${formatDuration(duration)}</div>
             <div>Status: ${span.status || 'UNSET'}</div>
           </div>`;
         },
-        backgroundColor: 'rgba(30, 41, 59, 0.95)',
-        borderColor: 'rgba(51, 65, 85, 0.5)',
-        textStyle: { color: '#e2e8f0' }
+        backgroundColor: tooltipBg,
+        borderColor: tooltipBorder,
+        textStyle: { 
+          color: tooltipText,
+          fontFamily: 'Rubik, sans-serif'
+        }
       },
       grid: {
         left: 180,
@@ -173,11 +186,13 @@ const TraceTimelineChart: React.FC<TraceTimelineChartProps> = ({
         max: timeRange.endTime,
         axisLabel: {
           formatter: (val: number) => formatDuration(val - timeRange.startTime),
-          fontSize: 10,
-          color: '#94a3b8'
+          fontSize: 11,
+          color: labelColor,
+          fontFamily: 'Rubik, sans-serif',
+          fontWeight: 500
         },
-        axisLine: { lineStyle: { color: '#334155' } },
-        splitLine: { lineStyle: { color: '#1e293b', type: 'dashed' } }
+        axisLine: { lineStyle: { color: axisColor } },
+        splitLine: { lineStyle: { color: splitLineColor, type: 'dashed' } }
       },
       yAxis: {
         type: 'category',
@@ -191,18 +206,33 @@ const TraceTimelineChart: React.FC<TraceTimelineChartProps> = ({
             const span = spanMap[idx];
             if (!span) return '';
             const indent = '  '.repeat(span.depth || 0);
-            const icon = span.hasChildren ? (expandedSpans.has(span.spanId) ? '▼' : '▶') : '  ';
+            // Use rich text formatting for bigger caret
+            const icon = span.hasChildren 
+              ? (expandedSpans.has(span.spanId) ? '{caret|▾}' : '{caret|▸}') 
+              : ' ';
             const label = span.name?.split('.').pop() || 'span';
             const truncatedLabel = truncate(label, 25);
             return `${indent}${icon} ${truncatedLabel}`;
           },
-          fontSize: 11,
-          color: '#94a3b8',
-          margin: 12
+          fontSize: 12,
+          color: labelColor,
+          fontFamily: 'Rubik, sans-serif',
+          fontWeight: 500,
+          margin: 12,
+          // Rich text styles for bigger, more visible caret
+          rich: {
+            caret: {
+              color: isDarkMode ? 'rgb(96, 165, 250)' : 'rgb(59, 130, 246)',
+              fontSize: 14,
+              fontWeight: 'bold',
+              padding: [0, 2, 0, 0]
+            }
+          }
         },
         axisLine: { show: false },
         axisTick: { show: false },
-        splitLine: { show: false }
+        splitLine: { show: false },
+        triggerEvent: true // Enable click events on axis labels
       },
       series: [{
         type: 'custom',
@@ -228,6 +258,21 @@ const TraceTimelineChart: React.FC<TraceTimelineChartProps> = ({
         if (span?.hasChildren) {
           onToggleExpand(span.spanId);
         }
+      }
+    });
+
+    // Change cursor on hover over y-axis labels with children
+    chart.off('mousemove');
+    chart.on('mousemove', (params: any) => {
+      if (params.componentType === 'yAxis') {
+        const span = spanMap[params.value];
+        if (span?.hasChildren) {
+          chartRef.current!.style.cursor = 'pointer';
+        } else {
+          chartRef.current!.style.cursor = isDragging ? 'grabbing' : 'grab';
+        }
+      } else {
+        chartRef.current!.style.cursor = isDragging ? 'grabbing' : 'grab';
       }
     });
 

@@ -32,6 +32,7 @@ import '@xyflow/react/dist/style.css';
 import { 
   ZoomIn, 
   ZoomOut,
+  Map,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -78,6 +79,7 @@ export const TraceFlowView: React.FC<TraceFlowViewProps> = ({
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const reactFlowInstance = useRef<ReactFlowInstance | null>(null);
+  const [showMinimap, setShowMinimap] = useState(true);
 
   // Categorize spans and convert to flow
   const categorizedTree = useMemo(
@@ -144,6 +146,11 @@ export const TraceFlowView: React.FC<TraceFlowViewProps> = ({
     reactFlowInstance.current?.zoomOut();
   }, []);
 
+  // Minimap toggle
+  const handleToggleMinimap = useCallback(() => {
+    setShowMinimap(prev => !prev);
+  }, []);
+
   // Find selected span in categorized tree for details panel
   const selectedCategorizedSpan = useMemo(() => {
     if (!selectedSpan) return null;
@@ -174,25 +181,34 @@ export const TraceFlowView: React.FC<TraceFlowViewProps> = ({
     <div className="h-full flex">
       {/* Service Map */}
       <div className="flex-1 flex flex-col min-h-0 relative">
-        {/* Floating controls inside the map */}
-        <div className="absolute top-3 right-3 z-10 flex flex-col gap-1 bg-card border rounded-lg shadow-lg p-1">
+        {/* Floating controls inside the map - stacked vertically */}
+        <div className="absolute top-3 right-3 z-10 flex flex-col gap-1 bg-card border rounded-lg shadow-lg p-0.5">
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="h-6 w-6"
             onClick={handleZoomIn}
             title="Zoom in"
           >
-            <ZoomIn size={16} />
+            <ZoomIn size={12} />
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="h-6 w-6"
             onClick={handleZoomOut}
             title="Zoom out"
           >
-            <ZoomOut size={16} />
+            <ZoomOut size={12} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={handleToggleMinimap}
+            title={showMinimap ? "Hide minimap" : "Show minimap"}
+          >
+            <Map size={12} />
           </Button>
         </div>
 
@@ -224,13 +240,15 @@ export const TraceFlowView: React.FC<TraceFlowViewProps> = ({
             size={1}
             color="#334155"
           />
-          <MiniMap
-            nodeColor={minimapNodeColor}
-            maskColor="rgba(15, 23, 42, 0.8)"
-            className="!bg-slate-900/50 !border-slate-700"
-            pannable
-            zoomable
-          />
+          {showMinimap && (
+            <MiniMap
+              nodeColor={minimapNodeColor}
+              maskColor="rgba(15, 23, 42, 0.8)"
+              className="!bg-slate-900/50 !border-slate-700"
+              pannable
+              zoomable
+            />
+          )}
         </ReactFlow>
       </div>
 

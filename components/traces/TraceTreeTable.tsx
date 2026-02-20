@@ -180,13 +180,10 @@ const TraceTreeTable: React.FC<TraceTreeTableProps> = ({
                   
                   // Highlight the entire L-shaped path from parent to selected child
                   // This includes the vertical line down from parent and the curve to the child
-                  const isInSelectedLPath = isSelected && isLastLevel;
                   const levelInHoveredPath = ancestorAtLevel && isInHoveredPath(ancestorAtLevel);
                   
-                  // Determine line color - use solid colors
-                  const lineColor = isInSelectedLPath
-                    ? '#0077cc' // Solid blue for the L-shaped path to selected row
-                    : levelInHoveredPath
+                  // Determine line color - use solid colors (no blue for selected)
+                  const lineColor = levelInHoveredPath
                     ? '#808080' // Solid gray for hovered
                     : '#d0d0d0'; // Light solid gray default
                   

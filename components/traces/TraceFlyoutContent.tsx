@@ -231,19 +231,33 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
     }));
   };
 
-  // Get color classes for category detail pills
-  const getCategoryDetailColors = (category: string) => {
+  // Aggro-style-edit: Get inline styles for category detail pills (theme-aware)
+  // Note: This function checks theme on each call to ensure it's always current
+  const getCategoryDetailStyle = (category: string): React.CSSProperties => {
+    // Check theme every time to ensure reactivity
+    const isDarkMode = document.documentElement.classList.contains('dark');
+    
     switch (category) {
       case 'agent':
-        return 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30';
+        return isDarkMode
+          ? { backgroundColor: 'rgba(59, 130, 246, 0.15)', color: 'rgb(147, 197, 253)', border: '1px solid rgba(59, 130, 246, 0.4)' }
+          : { backgroundColor: 'rgb(219, 234, 254)', color: 'rgb(29, 78, 216)', border: '1px solid rgb(147, 197, 253)' };
       case 'llm':
-        return 'bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-500/10 dark:text-purple-300 dark:border-purple-500/30';
+        return isDarkMode
+          ? { backgroundColor: 'rgba(168, 85, 247, 0.15)', color: 'rgb(192, 132, 252)', border: '1px solid rgba(168, 85, 247, 0.4)' }
+          : { backgroundColor: 'rgb(243, 232, 255)', color: 'rgb(107, 33, 168)', border: '1px solid rgb(216, 180, 254)' };
       case 'tool':
-        return 'bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30';
+        return isDarkMode
+          ? { backgroundColor: 'rgba(245, 158, 11, 0.15)', color: 'rgb(251, 191, 36)', border: '1px solid rgba(245, 158, 11, 0.4)' }
+          : { backgroundColor: 'rgb(254, 243, 199)', color: 'rgb(146, 64, 14)', border: '1px solid rgb(252, 211, 77)' };
       case 'error':
-        return 'bg-red-100 text-red-800 border-red-300 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/30';
+        return isDarkMode
+          ? { backgroundColor: 'rgba(239, 68, 68, 0.15)', color: 'rgb(248, 113, 113)', border: '1px solid rgba(239, 68, 68, 0.4)' }
+          : { backgroundColor: 'rgb(254, 226, 226)', color: 'rgb(153, 27, 27)', border: '1px solid rgb(252, 165, 165)' };
       default:
-        return 'bg-muted text-foreground border-border';
+        return isDarkMode
+          ? { backgroundColor: 'rgba(107, 114, 128, 0.1)', color: 'rgb(156, 163, 175)', border: '1px solid rgba(107, 114, 128, 0.3)' }
+          : { backgroundColor: 'rgb(243, 244, 246)', color: 'rgb(55, 65, 81)', border: '1px solid rgb(209, 213, 219)' };
     }
   };
 
@@ -402,12 +416,32 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
               {spanStats.byCategory.llm?.count > 0 && (
                 <button
                   onClick={() => handleSummaryClick('llm')}
-                  className={cn(
-                    'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border-2 transition-all cursor-pointer flex-1',
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border-2 transition-all cursor-pointer flex-1"
+                  style={
                     expandedSummary === 'llm'
-                      ? 'bg-purple-100 text-purple-900 border-purple-400 dark:bg-purple-500/20 dark:text-purple-200 dark:border-purple-500/50'
-                      : 'bg-purple-50 text-purple-800 border-purple-200 dark:bg-purple-500/10 dark:text-purple-300 dark:border-purple-500/30 hover:bg-purple-100 hover:border-purple-400 hover:shadow-md dark:hover:bg-purple-500/20 dark:hover:border-purple-500/50'
-                  )}
+                      ? document.documentElement.classList.contains('dark')
+                        ? { backgroundColor: 'rgba(168, 85, 247, 0.25)', color: 'rgb(216, 180, 254)', border: '2px solid rgba(168, 85, 247, 0.6)' }
+                        : { backgroundColor: 'rgb(233, 213, 255)', color: 'rgb(88, 28, 135)', border: '2px solid rgb(192, 132, 252)' }
+                      : document.documentElement.classList.contains('dark')
+                        ? { backgroundColor: 'rgba(168, 85, 247, 0.12)', color: 'rgb(192, 132, 252)', border: '2px solid rgba(168, 85, 247, 0.35)' }
+                        : { backgroundColor: 'rgb(250, 245, 255)', color: 'rgb(107, 33, 168)', border: '2px solid rgb(216, 180, 254)' }
+                  }
+                  onMouseEnter={(e) => {
+                    if (expandedSummary !== 'llm') {
+                      const isDark = document.documentElement.classList.contains('dark');
+                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(168, 85, 247, 0.2)' : 'rgb(243, 232, 255)';
+                      e.currentTarget.style.borderColor = isDark ? 'rgba(168, 85, 247, 0.5)' : 'rgb(192, 132, 252)';
+                      e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (expandedSummary !== 'llm') {
+                      const isDark = document.documentElement.classList.contains('dark');
+                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(168, 85, 247, 0.12)' : 'rgb(250, 245, 255)';
+                      e.currentTarget.style.borderColor = isDark ? 'rgba(168, 85, 247, 0.35)' : 'rgb(216, 180, 254)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }
+                  }}
                 >
                   <MessageSquare size={11} className="flex-shrink-0" />
                   <span className="font-medium">{spanStats.byCategory.llm.count}</span>
@@ -423,12 +457,32 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
               {spanStats.byCategory.agent?.count > 0 && (
                 <button
                   onClick={() => handleSummaryClick('agent')}
-                  className={cn(
-                    'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border-2 transition-all cursor-pointer flex-1',
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border-2 transition-all cursor-pointer flex-1"
+                  style={
                     expandedSummary === 'agent'
-                      ? 'bg-blue-100 text-blue-900 border-blue-400 dark:bg-blue-500/20 dark:text-blue-200 dark:border-blue-500/50'
-                      : 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30 hover:bg-blue-100 hover:border-blue-400 hover:shadow-md dark:hover:bg-blue-500/20 dark:hover:border-blue-500/50'
-                  )}
+                      ? document.documentElement.classList.contains('dark')
+                        ? { backgroundColor: 'rgba(59, 130, 246, 0.25)', color: 'rgb(147, 197, 253)', border: '2px solid rgba(59, 130, 246, 0.6)' }
+                        : { backgroundColor: 'rgb(191, 219, 254)', color: 'rgb(30, 64, 175)', border: '2px solid rgb(96, 165, 250)' }
+                      : document.documentElement.classList.contains('dark')
+                        ? { backgroundColor: 'rgba(59, 130, 246, 0.12)', color: 'rgb(96, 165, 250)', border: '2px solid rgba(59, 130, 246, 0.35)' }
+                        : { backgroundColor: 'rgb(239, 246, 255)', color: 'rgb(29, 78, 216)', border: '2px solid rgb(147, 197, 253)' }
+                  }
+                  onMouseEnter={(e) => {
+                    if (expandedSummary !== 'agent') {
+                      const isDark = document.documentElement.classList.contains('dark');
+                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(59, 130, 246, 0.2)' : 'rgb(219, 234, 254)';
+                      e.currentTarget.style.borderColor = isDark ? 'rgba(59, 130, 246, 0.5)' : 'rgb(96, 165, 250)';
+                      e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (expandedSummary !== 'agent') {
+                      const isDark = document.documentElement.classList.contains('dark');
+                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(59, 130, 246, 0.12)' : 'rgb(239, 246, 255)';
+                      e.currentTarget.style.borderColor = isDark ? 'rgba(59, 130, 246, 0.35)' : 'rgb(147, 197, 253)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }
+                  }}
                 >
                   <Bot size={11} className="flex-shrink-0" />
                   <span className="font-medium">{spanStats.byCategory.agent.count}</span>
@@ -444,12 +498,32 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
               {spanStats.byCategory.tool?.count > 0 && (
                 <button
                   onClick={() => handleSummaryClick('tool')}
-                  className={cn(
-                    'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border-2 transition-all cursor-pointer flex-1',
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border-2 transition-all cursor-pointer flex-1"
+                  style={
                     expandedSummary === 'tool'
-                      ? 'bg-amber-100 text-amber-900 border-amber-400 dark:bg-amber-500/20 dark:text-amber-200 dark:border-amber-500/50'
-                      : 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30 hover:bg-amber-100 hover:border-amber-400 hover:shadow-md dark:hover:bg-amber-500/20 dark:hover:border-amber-500/50'
-                  )}
+                      ? document.documentElement.classList.contains('dark')
+                        ? { backgroundColor: 'rgba(245, 158, 11, 0.25)', color: 'rgb(252, 211, 77)', border: '2px solid rgba(245, 158, 11, 0.6)' }
+                        : { backgroundColor: 'rgb(254, 243, 199)', color: 'rgb(120, 53, 15)', border: '2px solid rgb(251, 191, 36)' }
+                      : document.documentElement.classList.contains('dark')
+                        ? { backgroundColor: 'rgba(245, 158, 11, 0.12)', color: 'rgb(251, 191, 36)', border: '2px solid rgba(245, 158, 11, 0.35)' }
+                        : { backgroundColor: 'rgb(255, 251, 235)', color: 'rgb(146, 64, 14)', border: '2px solid rgb(252, 211, 77)' }
+                  }
+                  onMouseEnter={(e) => {
+                    if (expandedSummary !== 'tool') {
+                      const isDark = document.documentElement.classList.contains('dark');
+                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(245, 158, 11, 0.2)' : 'rgb(254, 243, 199)';
+                      e.currentTarget.style.borderColor = isDark ? 'rgba(245, 158, 11, 0.5)' : 'rgb(251, 191, 36)';
+                      e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (expandedSummary !== 'tool') {
+                      const isDark = document.documentElement.classList.contains('dark');
+                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(245, 158, 11, 0.12)' : 'rgb(255, 251, 235)';
+                      e.currentTarget.style.borderColor = isDark ? 'rgba(245, 158, 11, 0.35)' : 'rgb(252, 211, 77)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }
+                  }}
                 >
                   <Wrench size={11} className="flex-shrink-0" />
                   <span className="font-medium">{spanStats.byCategory.tool.count}</span>
@@ -465,12 +539,32 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
               {trace.hasErrors && (
                 <button
                   onClick={() => handleSummaryClick('error')}
-                  className={cn(
-                    'inline-flex items-center justify-between gap-1.5 px-2.5 py-1 rounded-lg border-2 transition-all cursor-pointer flex-1',
+                  className="inline-flex items-center justify-between gap-1.5 px-2.5 py-1 rounded-lg border-2 transition-all cursor-pointer flex-1"
+                  style={
                     expandedSummary === 'error'
-                      ? 'bg-red-100 text-red-900 border-red-400 dark:bg-red-500/20 dark:text-red-200 dark:border-red-500/50'
-                      : 'bg-red-50 text-red-800 border-red-200 dark:bg-red-500/10 dark:text-red-300 dark:border-red-500/30 hover:bg-red-100 hover:border-red-400 hover:shadow-md dark:hover:bg-red-500/20 dark:hover:border-red-500/50'
-                  )}
+                      ? document.documentElement.classList.contains('dark')
+                        ? { backgroundColor: 'rgba(239, 68, 68, 0.25)', color: 'rgb(252, 165, 165)', border: '2px solid rgba(239, 68, 68, 0.6)' }
+                        : { backgroundColor: 'rgb(254, 226, 226)', color: 'rgb(127, 29, 29)', border: '2px solid rgb(248, 113, 113)' }
+                      : document.documentElement.classList.contains('dark')
+                        ? { backgroundColor: 'rgba(239, 68, 68, 0.12)', color: 'rgb(248, 113, 113)', border: '2px solid rgba(239, 68, 68, 0.35)' }
+                        : { backgroundColor: 'rgb(255, 241, 242)', color: 'rgb(153, 27, 27)', border: '2px solid rgb(252, 165, 165)' }
+                  }
+                  onMouseEnter={(e) => {
+                    if (expandedSummary !== 'error') {
+                      const isDark = document.documentElement.classList.contains('dark');
+                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.2)' : 'rgb(254, 226, 226)';
+                      e.currentTarget.style.borderColor = isDark ? 'rgba(239, 68, 68, 0.5)' : 'rgb(248, 113, 113)';
+                      e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (expandedSummary !== 'error') {
+                      const isDark = document.documentElement.classList.contains('dark');
+                      e.currentTarget.style.backgroundColor = isDark ? 'rgba(239, 68, 68, 0.12)' : 'rgb(255, 241, 242)';
+                      e.currentTarget.style.borderColor = isDark ? 'rgba(239, 68, 68, 0.35)' : 'rgb(252, 165, 165)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }
+                  }}
                 >
                   <div className="inline-flex items-center gap-1.5">
                     <XCircle size={11} className="flex-shrink-0" />
@@ -511,10 +605,8 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
                       {getCategoryDetails(expandedSummary).map((item, idx) => (
                         <div
                           key={idx}
-                          className={cn(
-                            'inline-flex items-center gap-2 px-2.5 py-1 rounded-md border text-xs font-medium',
-                            getCategoryDetailColors(expandedSummary)
-                          )}
+                          className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-medium"
+                          style={getCategoryDetailStyle(expandedSummary)}
                         >
                           <span>{item.name}</span>
                           {item.count > 1 && (
@@ -531,10 +623,8 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
                     {getCategoryDetails(expandedSummary).map((item, idx) => (
                       <div
                         key={idx}
-                        className={cn(
-                          'inline-flex items-center gap-2 px-2.5 py-1 rounded-md border text-xs font-medium',
-                          getCategoryDetailColors(expandedSummary)
-                        )}
+                        className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-medium"
+                        style={getCategoryDetailStyle(expandedSummary)}
                       >
                         <span>{item.name}</span>
                         {item.count > 1 && (
