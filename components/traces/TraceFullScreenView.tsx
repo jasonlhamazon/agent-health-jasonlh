@@ -11,7 +11,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Activity, Minimize2 } from 'lucide-react';
+import { Activity, Minimize2, Network, List, GitBranch } from 'lucide-react';
 import {
   FullScreenDialog,
   FullScreenDialogContent,
@@ -22,10 +22,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Span, TimeRange, CategorizedSpan } from '@/types';
-import TraceFlowView from './TraceFlowView';
-import TraceTimelineChart from './TraceTimelineChart';
-import SpanDetailsPanel from './SpanDetailsPanel';
-import ViewToggle, { ViewMode } from './ViewToggle';
+import TraceVisualization from './TraceVisualization';
+import { ViewMode } from './ViewToggle';
 
 interface TraceFullScreenViewProps {
   /** Whether the fullscreen dialog is open */
@@ -61,7 +59,7 @@ export const TraceFullScreenView: React.FC<TraceFullScreenViewProps> = ({
   timeRange,
   selectedSpan: controlledSelectedSpan,
   onSelectSpan,
-  initialViewMode = 'flow',
+  initialViewMode = 'timeline',
   onViewModeChange,
   spanCount,
 }) => {
@@ -69,6 +67,11 @@ export const TraceFullScreenView: React.FC<TraceFullScreenViewProps> = ({
   const [internalSelectedSpan, setInternalSelectedSpan] = useState<Span | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>(initialViewMode);
   const [expandedSpans, setExpandedSpans] = useState<Set<string>>(new Set());
+
+  // Sync view mode with external prop changes
+  useEffect(() => {
+    setViewMode(initialViewMode);
+  }, [initialViewMode]);
 
   // Use controlled or uncontrolled span selection
   const selectedSpan = controlledSelectedSpan !== undefined ? controlledSelectedSpan : internalSelectedSpan;
@@ -143,7 +146,37 @@ export const TraceFullScreenView: React.FC<TraceFullScreenViewProps> = ({
           </div>
 
           <div className="flex items-center gap-3">
-            <ViewToggle viewMode={viewMode} onChange={handleViewModeChange} />
+            {/* View Toggle - matching flyout style */}
+            <div className="inline-flex items-center rounded-lg border bg-muted p-1 gap-1">
+              <Button
+                variant={viewMode === 'timeline' ? 'default' : 'ghost'}
+                size="sm"
+                className="h-7 px-3 text-xs"
+                onClick={() => handleViewModeChange('timeline')}
+              >
+                <Network size={14} className="mr-1.5" />
+                Trace tree
+              </Button>
+              <Button
+                variant={viewMode === 'flow' ? 'default' : 'ghost'}
+                size="sm"
+                className="h-7 px-3 text-xs"
+                onClick={() => handleViewModeChange('flow')}
+              >
+                <GitBranch size={14} className="mr-1.5" />
+                Agent graph
+              </Button>
+              <Button
+                variant={viewMode === 'gantt' ? 'default' : 'ghost'}
+                size="sm"
+                className="h-7 px-3 text-xs"
+                onClick={() => handleViewModeChange('gantt')}
+              >
+                <List size={14} className="mr-1.5" />
+                Timeline
+              </Button>
+            </div>
+            
             <Button
               variant="ghost"
               size="sm"
@@ -158,43 +191,25 @@ export const TraceFullScreenView: React.FC<TraceFullScreenViewProps> = ({
         </FullScreenDialogHeader>
 
         {/* Main content area */}
-        <div className="flex-1 flex overflow-hidden">
-          {/* Trace visualization */}
-          <div className="flex-1 relative">
-            {spanTree.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
-                <Activity size={48} className="mb-4 opacity-20" />
-                <p>No trace data available</p>
-              </div>
-            ) : viewMode === 'timeline' ? (
-              <div className="h-full overflow-auto p-4">
-                <TraceTimelineChart
-                  spanTree={spanTree}
-                  timeRange={timeRange}
-                  selectedSpan={selectedSpan}
-                  onSelect={handleSelectSpan}
-                  expandedSpans={expandedSpans}
-                  onToggleExpand={handleToggleExpand}
-                />
-              </div>
-            ) : (
-              <TraceFlowView
-                spanTree={spanTree}
-                timeRange={timeRange}
-                selectedSpan={selectedSpan}
-                onSelectSpan={handleSelectSpan}
-              />
-            )}
-          </div>
-
-          {/* Details panel - only show for timeline mode since flow has integrated panel */}
-          {viewMode === 'timeline' && selectedSpan && (
-            <div className="w-96 border-l overflow-auto bg-card">
-              <SpanDetailsPanel
-                span={selectedSpan as CategorizedSpan}
-                onClose={() => handleSelectSpan(null)}
-              />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {spanTree.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
+              <Activity size={48} className="mb-4 opacity-20" />
+              <p>No trace data available</p>
             </div>
+          ) : (
+            <TraceVisualization
+              spanTree={spanTree}
+              timeRange={timeRange}
+              initialViewMode={viewMode}
+              onViewModeChange={handleViewModeChange}
+              showViewToggle={false}
+              selectedSpan={selectedSpan}
+              onSelectSpan={handleSelectSpan}
+              expandedSpans={expandedSpans}
+              onToggleExpand={handleToggleExpand}
+              showSpanDetailsPanel={true}
+            />
           )}
         </div>
       </FullScreenDialogContent>

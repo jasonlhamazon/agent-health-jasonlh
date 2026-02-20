@@ -10,6 +10,20 @@ Inspired by [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## [Unreleased]
 
 ### Added
+- Light and dark mode theme support with dynamic switching and OUI font integration
+- Universal debug logging system with `lib/debug.ts` supporting both browser (localStorage) and Node.js (in-memory flag) environments
+- `GET/POST /api/debug` endpoint for runtime toggle of server-side verbose logging
+- Settings page debug toggle now syncs to both browser console and server terminal output
+- `DEBUG` environment variable for server-side debug initialization
+- Converted `console.log` to structured `debug()` calls across 30+ server routes, services, and connectors
+- Unit, integration, and E2E tests for debug logging system
+- Pagination and total count support for benchmarks, test case runs, and reports ([#35](https://github.com/opensearch-project/agent-health/pull/35))
+- Lazy backfill for benchmark run stats and `migrate` CLI command for denormalized `RunStats` ([#35](https://github.com/opensearch-project/agent-health/pull/35))
+- Benchmark export to JSON format for sharing and reproducibility ([#35](https://github.com/opensearch-project/agent-health/pull/35))
+- JSON import for test cases with schema validation and error handling ([#35](https://github.com/opensearch-project/agent-health/pull/35))
+- File-backed storage for custom agent endpoints with persistence ([#35](https://github.com/opensearch-project/agent-health/pull/35))
+- `BeforeRequestContext` and `AgentHooks` hook type exports in public API ([#35](https://github.com/opensearch-project/agent-health/pull/35))
+- Integration tests for run storage, benchmark versioning, and benchmark import ([#35](https://github.com/opensearch-project/agent-health/pull/35))
 - CLI commands (`run`, `list`, `benchmark`, `doctor`, `init`) for headless agent evaluation ([#33](https://github.com/opensearch-project/dashboards-traces/pull/33))
 - Pluggable connector architecture supporting AG-UI, REST, subprocess, and Claude Code agents ([#33](https://github.com/opensearch-project/dashboards-traces/pull/33))
 - TypeScript configuration file support with `defineConfig()` helper ([#33](https://github.com/opensearch-project/dashboards-traces/pull/33))
@@ -46,6 +60,9 @@ Inspired by [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Enhanced storage route tests with additional coverage
 
 ### Changed
+- Integrated custom agents from JSON-backed store into benchmark execution ([#35](https://github.com/opensearch-project/agent-health/pull/35))
+- Updated observability agent benchmark scenarios for OTEL demo ([#35](https://github.com/opensearch-project/agent-health/pull/35))
+- Optimized run statistics calculations to avoid expensive per-request aggregation ([#35](https://github.com/opensearch-project/agent-health/pull/35))
 - Enhanced Playwright configuration for CI/local development environments ([#24](https://github.com/opensearch-project/dashboards-traces/pull/24))
 - Updated navigation to distinguish "Agent Traces" (table view) from "Live Traces" (real-time) ([#25](https://github.com/opensearch-project/dashboards-traces/pull/25))
 - Enhanced CORS middleware setup for better cross-origin support ([#20](https://github.com/opensearch-project/dashboards-traces/pull/20))
@@ -71,6 +88,10 @@ Inspired by [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Fixed high severity ReDoS vulnerability in @modelcontextprotocol/sdk
 
 ### Security
+- Updated ajv from 8.17.1 to 8.18.0 to fix GHSA-2g4f-4pwh-qvx6 ReDoS vulnerability ([#39](https://github.com/opensearch-project/agent-health/pull/39))
+- Updated fast-xml-parser from 5.3.4 to 5.3.6 to fix GHSA-jmr7-xgp7-cmfj DoS vulnerability ([#39](https://github.com/opensearch-project/agent-health/pull/39))
+- Updated qs from 6.14.1 to 6.15.0 to fix GHSA-w7fw-mjwx-w883 arrayLimit bypass vulnerability ([#39](https://github.com/opensearch-project/agent-health/pull/39))
+- Updated @aws-sdk/xml-builder from 3.972.4 to 3.972.5 (transitive dependency fix) ([#39](https://github.com/opensearch-project/agent-health/pull/39))
 - Updated @modelcontextprotocol/sdk to address GHSA-8r9q-7v3j-jr4g
 - Updated lodash from 4.17.21 to 4.17.23 to fix CVE-2025-13465 prototype pollution vulnerability
 - Updated lycheeverse/lychee-action from v1 to v2.0.2 in CI workflow

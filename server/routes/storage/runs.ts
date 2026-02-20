@@ -11,6 +11,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { debug } from '@/lib/debug';
 import { isStorageAvailable, requireStorageClient, INDEXES } from '../../middleware/storageClient.js';
 import {
   SAMPLE_RUNS,
@@ -87,6 +88,59 @@ router.get('/api/storage/runs', async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/storage/runs/counts-by-test-case - Bulk run counts per test case (single aggregation query)
+// NOTE: This route MUST be registered before /api/storage/runs/:id to avoid Express matching
+// "counts-by-test-case" as a :id parameter.
+router.get('/api/storage/runs/counts-by-test-case', async (req: Request, res: Response) => {
+  try {
+    // Build sample counts
+    const sampleCounts: Record<string, number> = {};
+    for (const run of SAMPLE_RUNS) {
+      sampleCounts[run.testCaseId] = (sampleCounts[run.testCaseId] || 0) + 1;
+    }
+
+    let realCounts: Record<string, number> = {};
+
+    // Fetch from OpenSearch if configured - use terms aggregation for efficiency
+    if (isStorageAvailable(req)) {
+      try {
+        const client = requireStorageClient(req);
+        const result = await client.search({
+          index: INDEX,
+          body: {
+            size: 0, // No documents needed, only aggregation
+            aggs: {
+              by_test_case: {
+                terms: {
+                  field: 'testCaseId',
+                  size: 10000, // Max buckets
+                },
+              },
+            },
+          },
+        });
+        const buckets = (result.body.aggregations?.by_test_case as any)?.buckets || [];
+        for (const bucket of buckets) {
+          realCounts[bucket.key as string] = bucket.doc_count as number;
+        }
+      } catch (e: any) {
+        console.warn('[StorageAPI] OpenSearch unavailable for count aggregation:', e.message);
+      }
+    }
+
+    // Merge counts (real + sample)
+    const counts: Record<string, number> = { ...sampleCounts };
+    for (const [testCaseId, count] of Object.entries(realCounts)) {
+      counts[testCaseId] = (counts[testCaseId] || 0) + count;
+    }
+
+    res.json({ counts });
+  } catch (error: any) {
+    console.error('[StorageAPI] Counts by test case failed:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /api/storage/runs/:id - Get by ID
 router.get('/api/storage/runs/:id', async (req: Request, res: Response) => {
   try {
@@ -135,7 +189,7 @@ router.post('/api/storage/runs', async (req: Request, res: Response) => {
 
     const client = requireStorageClient(req);
     const run = await createRunWithClient(client, runData);
-    console.log(`[StorageAPI] Created run: ${run.id}`);
+    debug('StorageAPI', `Created run: ${run.id}`);
     res.status(201).json(run);
   } catch (error: any) {
     console.error('[StorageAPI] Create run failed:', error.message);
@@ -165,7 +219,7 @@ router.patch('/api/storage/runs/:id', async (req: Request, res: Response) => {
 
     const client = requireStorageClient(req);
     const updated = await updateRunWithClient(client, id, updates);
-    console.log(`[StorageAPI] Updated run: ${id}`);
+    debug('StorageAPI', `Updated run: ${id}`);
     res.json(updated);
   } catch (error: any) {
     if (error.meta?.statusCode === 404) {
@@ -194,7 +248,7 @@ router.delete('/api/storage/runs/:id', async (req: Request, res: Response) => {
     const client = requireStorageClient(req);
     await client.delete({ index: INDEX, id, refresh: true });
 
-    console.log(`[StorageAPI] Deleted run: ${id}`);
+    debug('StorageAPI', `Deleted run: ${id}`);
     res.json({ deleted: true });
   } catch (error: any) {
     if (error.meta?.statusCode === 404) {
@@ -276,12 +330,13 @@ router.post('/api/storage/runs/search', async (req: Request, res: Response) => {
 router.get('/api/storage/runs/by-test-case/:testCaseId', async (req: Request, res: Response) => {
   try {
     const { testCaseId } = req.params;
-    const { size = '100' } = req.query;
+    const { size = '100', from = '0' } = req.query;
 
     // Get sample runs for this test case
     const sampleResults = getSampleRunsByTestCase(testCaseId);
 
     let realData: TestCaseRun[] = [];
+    let realTotal = 0;
 
     // Fetch from OpenSearch if configured
     if (isStorageAvailable(req)) {
@@ -291,11 +346,13 @@ router.get('/api/storage/runs/by-test-case/:testCaseId', async (req: Request, re
           index: INDEX,
           body: {
             size: parseInt(size as string),
+            from: parseInt(from as string),
             sort: [{ createdAt: { order: 'desc' } }],
             query: { term: { testCaseId } },
           },
         });
         realData = result.body.hits?.hits?.map((hit: any) => hit._source) || [];
+        realTotal = (result.body.hits?.total as any)?.value ?? realData.length;
       } catch (e: any) {
         console.warn('[StorageAPI] OpenSearch unavailable:', e.message);
       }
@@ -306,9 +363,12 @@ router.get('/api/storage/runs/by-test-case/:testCaseId', async (req: Request, re
       getTimestampMs(b) - getTimestampMs(a)
     );
 
-    // User data first, then sample data
-    const allData = [...realData, ...sortedSampleResults];
-    res.json({ runs: allData, total: allData.length });
+    // Only append sample data on the first page (from === 0)
+    const fromInt = parseInt(from as string);
+    const allData = fromInt === 0 ? [...realData, ...sortedSampleResults] : realData;
+    const total = realTotal + sampleResults.length;
+
+    res.json({ runs: allData, total, size: parseInt(size as string), from: fromInt });
   } catch (error: any) {
     console.error('[StorageAPI] Get runs by test case failed:', error.message);
     res.status(500).json({ error: error.message });
@@ -496,7 +556,7 @@ router.post('/api/storage/runs/:id/annotations', async (req: Request, res: Respo
       refresh: true,
     });
 
-    console.log(`[StorageAPI] Added annotation to run: ${id}`);
+    debug('StorageAPI', `Added annotation to run: ${id}`);
     res.status(201).json(annotation);
   } catch (error: any) {
     console.error('[StorageAPI] Add annotation failed:', error.message);
@@ -542,7 +602,7 @@ router.put('/api/storage/runs/:id/annotations/:annotationId', async (req: Reques
       refresh: true,
     });
 
-    console.log(`[StorageAPI] Updated annotation ${annotationId} on run: ${id}`);
+    debug('StorageAPI', `Updated annotation ${annotationId} on run: ${id}`);
     res.json({ ...updates, id: annotationId });
   } catch (error: any) {
     console.error('[StorageAPI] Update annotation failed:', error.message);
@@ -577,7 +637,7 @@ router.delete('/api/storage/runs/:id/annotations/:annotationId', async (req: Req
       refresh: true,
     });
 
-    console.log(`[StorageAPI] Deleted annotation ${annotationId} from run: ${id}`);
+    debug('StorageAPI', `Deleted annotation ${annotationId} from run: ${id}`);
     res.json({ deleted: true });
   } catch (error: any) {
     console.error('[StorageAPI] Delete annotation failed:', error.message);
@@ -619,7 +679,7 @@ router.post('/api/storage/runs/bulk', async (req: Request, res: Response) => {
 
     const result = await client.bulk({ body: operations, refresh: true });
 
-    console.log(`[StorageAPI] Bulk created ${runs.length} runs`);
+    debug('StorageAPI', `Bulk created ${runs.length} runs`);
     res.json({ created: runs.length, errors: result.body.errors });
   } catch (error: any) {
     console.error('[StorageAPI] Bulk create runs failed:', error.message);

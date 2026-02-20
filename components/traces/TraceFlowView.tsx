@@ -13,11 +13,11 @@
  * - Branch edges: parent → child for detail/implementation spans
  * - Parallel detection: among siblings with overlapping times
  *
- * Also displays summary stats above the flow and time distribution below.
+ * Shows service map with span details panel on right when node is selected.
  * Uses dagre for automatic layout positioning with TB (top-to-bottom) direction.
  */
 
-import React, { useCallback, useMemo, useEffect, useRef } from 'react';
+import React, { useCallback, useMemo, useEffect, useRef, useState } from 'react';
 import {
   ReactFlow,
   Background,
@@ -29,24 +29,18 @@ import {
   type ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
+import { 
+  ZoomIn, 
+  ZoomOut,
+  Map,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 import { Span, TimeRange, CategorizedSpan, SpanNodeData } from '@/types';
 import { categorizeSpanTree } from '@/services/traces/spanCategorization';
 import { spansToFlow } from '@/services/traces/flowTransform';
-import { getRootContainerSpan } from '@/services/traces/intentTransform';
-import {
-  flattenSpans,
-  calculateCategoryStats,
-  extractToolStats,
-} from '@/services/traces/traceStats';
 import { nodeTypes } from './flow/nodeTypes';
 import SpanDetailsPanel from './SpanDetailsPanel';
-import {
-  TraceSummaryHeader,
-  SummaryStatsGrid,
-  ToolsUsedSection,
-  TimeDistributionBar,
-} from './TraceSummary';
 
 interface TraceFlowViewProps {
   spanTree: Span[];
@@ -85,35 +79,12 @@ export const TraceFlowView: React.FC<TraceFlowViewProps> = ({
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const reactFlowInstance = useRef<ReactFlowInstance | null>(null);
+  const [showMinimap, setShowMinimap] = useState(true);
 
   // Categorize spans and convert to flow
   const categorizedTree = useMemo(
     () => categorizeSpanTree(spanTree),
     [spanTree]
-  );
-
-  // Get root container for header
-  const rootContainer = useMemo(
-    () => getRootContainerSpan(categorizedTree),
-    [categorizedTree]
-  );
-
-  // Flatten all spans for analysis
-  const allSpans = useMemo(
-    () => flattenSpans(categorizedTree),
-    [categorizedTree]
-  );
-
-  // Calculate statistics
-  const categoryStats = useMemo(
-    () => calculateCategoryStats(allSpans, timeRange.duration),
-    [allSpans, timeRange.duration]
-  );
-
-  // Extract tool information
-  const toolStats = useMemo(
-    () => extractToolStats(allSpans),
-    [allSpans]
   );
 
   // Transform to React Flow nodes/edges - always use TB (top to bottom) direction
@@ -166,6 +137,20 @@ export const TraceFlowView: React.FC<TraceFlowViewProps> = ({
     onSelectSpan(null);
   }, [onSelectSpan]);
 
+  // Zoom controls
+  const handleZoomIn = useCallback(() => {
+    reactFlowInstance.current?.zoomIn();
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    reactFlowInstance.current?.zoomOut();
+  }, []);
+
+  // Minimap toggle
+  const handleToggleMinimap = useCallback(() => {
+    setShowMinimap(prev => !prev);
+  }, []);
+
   // Find selected span in categorized tree for details panel
   const selectedCategorizedSpan = useMemo(() => {
     if (!selectedSpan) return null;
@@ -193,53 +178,69 @@ export const TraceFlowView: React.FC<TraceFlowViewProps> = ({
   }
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Summary section (above flow) */}
-      <div className="shrink-0 border-b">
-        <TraceSummaryHeader
-          rootContainer={rootContainer}
-          spanCount={allSpans.length}
-          totalDuration={timeRange.duration}
-        />
-        <div className="p-4 space-y-4">
-          <SummaryStatsGrid categoryStats={categoryStats} toolStats={toolStats} />
-          <ToolsUsedSection toolStats={toolStats} />
-          {/* Time Distribution (above flow) */}
-          <TimeDistributionBar stats={categoryStats} totalDuration={timeRange.duration} />
-        </div>
-      </div>
-
-      {/* Flow canvas (middle) */}
-      <div className="flex-1 flex min-h-0">
-        <div className="flex-1 relative">
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onNodeClick={onNodeClick}
-            onPaneClick={onPaneClick}
-            onInit={onInit}
-            nodeTypes={nodeTypes}
-            fitView
-            fitViewOptions={{
-              padding: 0.1,
-              minZoom: 0.1,
-              maxZoom: 1,
-            }}
-            minZoom={0.1}
-            maxZoom={2}
-            defaultEdgeOptions={{
-              type: 'smoothstep',
-            }}
-            proOptions={{ hideAttribution: true }}
+    <div className="h-full flex">
+      {/* Service Map */}
+      <div className="flex-1 flex flex-col min-h-0 relative">
+        {/* Floating controls inside the map - stacked vertically */}
+        <div className="absolute top-3 right-3 z-10 flex flex-col gap-1 bg-card border rounded-lg shadow-lg p-0.5">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={handleZoomIn}
+            title="Zoom in"
           >
-            <Background
-              variant={BackgroundVariant.Dots}
-              gap={16}
-              size={1}
-              color="#334155"
-            />
+            <ZoomIn size={12} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={handleZoomOut}
+            title="Zoom out"
+          >
+            <ZoomOut size={12} />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6"
+            onClick={handleToggleMinimap}
+            title={showMinimap ? "Hide minimap" : "Show minimap"}
+          >
+            <Map size={12} />
+          </Button>
+        </div>
+
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeClick={onNodeClick}
+          onPaneClick={onPaneClick}
+          onInit={onInit}
+          nodeTypes={nodeTypes}
+          fitView
+          fitViewOptions={{
+            padding: 0.1,
+            minZoom: 0.1,
+            maxZoom: 1,
+          }}
+          minZoom={0.1}
+          maxZoom={2}
+          defaultEdgeOptions={{
+            type: 'smoothstep',
+          }}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={16}
+            size={1}
+            color="#334155"
+          />
+          {showMinimap && (
             <MiniMap
               nodeColor={minimapNodeColor}
               maskColor="rgba(15, 23, 42, 0.8)"
@@ -247,20 +248,19 @@ export const TraceFlowView: React.FC<TraceFlowViewProps> = ({
               pannable
               zoomable
             />
-          </ReactFlow>
-        </div>
-
-        {/* Details panel */}
-        {selectedCategorizedSpan && (
-          <div className="w-96 border-l overflow-auto">
-            <SpanDetailsPanel
-              span={selectedCategorizedSpan}
-              onClose={() => onSelectSpan(null)}
-            />
-          </div>
-        )}
+          )}
+        </ReactFlow>
       </div>
 
+      {/* Details panel on right */}
+      {selectedCategorizedSpan && (
+        <div className="w-[400px] border-l shrink-0">
+          <SpanDetailsPanel
+            span={selectedCategorizedSpan}
+            onClose={() => onSelectSpan(null)}
+          />
+        </div>
+      )}
     </div>
   );
 };

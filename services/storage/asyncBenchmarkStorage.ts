@@ -11,7 +11,7 @@
  */
 
 import { benchmarkStorage as opensearchBenchmarks, StorageBenchmark, StorageBenchmarkRunConfig } from './opensearchClient';
-import type { Benchmark, BenchmarkRun, BenchmarkVersion, TestCaseSnapshot, RunResultStatus } from '@/types';
+import type { Benchmark, BenchmarkRun, BenchmarkRunStatus, BenchmarkVersion, TestCaseSnapshot, RunResultStatus, RunStats } from '@/types';
 
 /** API response for benchmark list */
 interface BenchmarkListResponse {
@@ -75,6 +75,8 @@ function toBenchmarkRun(stored: StorageBenchmarkRunConfig): BenchmarkRun {
     headers: stored.headers,
     benchmarkVersion: (stored as any).benchmarkVersion ?? 1,
     testCaseSnapshots: (stored as any).testCaseSnapshots ?? [],
+    status: stored.status as BenchmarkRunStatus | undefined,
+    stats: stored.stats as RunStats | undefined,
     results,
   };
 }
@@ -137,10 +139,21 @@ class AsyncBenchmarkStorage {
 
   /**
    * Get a single benchmark by ID
+   * @param options.fields - 'polling' for lightweight payload (excludes versions, testCaseSnapshots, headers)
+   * @param options.runsSize - max number of runs to return
+   * @param options.runsOffset - offset into runs array for pagination
    */
-  async getById(id: string): Promise<Benchmark | null> {
-    const stored = await opensearchBenchmarks.getById(id);
-    return stored ? toBenchmark(stored) : null;
+  async getById(id: string, options?: { fields?: 'polling'; runsSize?: number; runsOffset?: number }): Promise<Benchmark | null> {
+    const stored = await opensearchBenchmarks.getById(id, options);
+    if (!stored) return null;
+    const benchmark = toBenchmark(stored);
+    // Pass through pagination metadata from server response
+    const storedAny = stored as any;
+    if (storedAny.totalRuns !== undefined) {
+      (benchmark as any).totalRuns = storedAny.totalRuns;
+      (benchmark as any).hasMoreRuns = storedAny.hasMoreRuns;
+    }
+    return benchmark;
   }
 
   /**

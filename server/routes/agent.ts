@@ -10,7 +10,9 @@
 import { Request, Response, Router } from 'express';
 import { proxyAgentRequest, validateAgentRequest } from '../services/agentService';
 import { loadConfigSync } from '@/lib/config/index';
+import { getCustomAgents } from '@/server/services/customAgentStore';
 import { executeBeforeRequestHook } from '@/lib/hooks';
+import { debug } from '@/lib/debug';
 
 const router = Router();
 
@@ -19,7 +21,7 @@ const router = Router();
  * Forwards request to the actual agent endpoint and streams SSE response back
  */
 router.post('/api/agent', async (req: Request, res: Response) => {
-  console.log('[Route /api/agent] Request received, endpoint:', req.body.endpoint);
+  debug('AgentProxy', 'Request received, endpoint:', req.body.endpoint);
 
   try {
     let { endpoint, payload, headers } = req.body;
@@ -34,7 +36,8 @@ router.post('/api/agent', async (req: Request, res: Response) => {
     // Execute beforeRequest hook if agent has one configured
     if (agentKey) {
       const config = loadConfigSync();
-      const agentConfig = config.agents.find(a => a.key === agentKey);
+      const allAgents = [...config.agents, ...getCustomAgents()];
+      const agentConfig = allAgents.find(a => a.key === agentKey);
       if (agentConfig?.hooks) {
         const hookResult = await executeBeforeRequestHook(
           agentConfig.hooks,

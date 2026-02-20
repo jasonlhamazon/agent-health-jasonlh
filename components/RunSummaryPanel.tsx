@@ -54,7 +54,7 @@ export const RunSummaryPanel: React.FC<RunSummaryPanelProps> = ({
       }
     });
 
-    const total = passed + failed;
+    const total = Object.keys(run.results || {}).length;
     const passRate = total > 0 ? Math.round((passed / total) * 100) : 0;
     const avgAccuracy = reportCount > 0 ? Math.round(totalAccuracy / reportCount) : 0;
 
@@ -203,9 +203,9 @@ export const RunSummaryPanel: React.FC<RunSummaryPanelProps> = ({
               </Card>
               <Card>
                 <CardContent className="p-4 text-center">
-                  <Timer size={16} className="mx-auto text-purple-400 mb-2" />
+                  <Timer size={16} className="mx-auto text-purple-700 dark:text-purple-400 mb-2" />
                   <div className="text-xs text-muted-foreground mb-1">Avg Duration</div>
-                  <div className="text-lg font-bold text-purple-400">
+                  <div className="text-lg font-bold text-purple-700 dark:text-purple-400">
                     {formatDuration(traceMetrics.avgDurationMs)}
                   </div>
                 </CardContent>

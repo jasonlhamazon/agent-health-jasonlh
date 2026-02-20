@@ -24,6 +24,7 @@ import type {
   EvaluationMetrics,
   ImprovementStrategy,
   OpenSearchLog,
+  ConnectorProtocol,
 } from '@/types';
 
 // Re-export search types for convenience
@@ -68,6 +69,7 @@ function toTestCaseRun(stored: StorageRun): TestCaseRun {
     lastTraceFetchAt?: string;
     traceError?: string;
     spans?: unknown[];
+    connectorProtocol?: string;
   };
 
   return {
@@ -109,6 +111,7 @@ function toTestCaseRun(stored: StorageRun): TestCaseRun {
     lastTraceFetchAt: storedAny.lastTraceFetchAt,
     traceError: storedAny.traceError,
     spans: storedAny.spans as any[] | undefined,
+    connectorProtocol: storedAny.connectorProtocol as ConnectorProtocol | undefined,
   };
 }
 
@@ -148,6 +151,7 @@ function toStorageFormat(report: EvaluationReport): Omit<StorageRun, 'id' | 'cre
   if (report.lastTraceFetchAt !== undefined) base.lastTraceFetchAt = report.lastTraceFetchAt;
   if (report.traceError !== undefined) base.traceError = report.traceError;
   if (report.spans !== undefined) base.spans = report.spans;
+  if (report.connectorProtocol !== undefined) base.connectorProtocol = report.connectorProtocol;
 
   return base;
 }
@@ -180,15 +184,22 @@ class AsyncRunStorage {
   }
 
   /**
+   * Get run counts grouped by test case ID (single bulk query)
+   */
+  async getRunCountsByTestCase(): Promise<Record<string, number>> {
+    return opensearchRuns.getCountsByTestCase();
+  }
+
+  /**
    * Get all reports for a specific test case
    */
   async getReportsByTestCase(
     testCaseId: string,
     options: GetReportsOptions = {}
-  ): Promise<EvaluationReport[]> {
-    const { limit = 100 } = options;
-    const stored = await opensearchRuns.getByTestCase(testCaseId, limit);
-    return stored.map(toTestCaseRun);
+  ): Promise<{ reports: EvaluationReport[]; total: number }> {
+    const { limit = 100, offset = 0 } = options;
+    const result = await opensearchRuns.getByTestCase(testCaseId, limit, offset);
+    return { reports: result.runs.map(toTestCaseRun), total: result.total };
   }
 
   /**
@@ -270,8 +281,8 @@ class AsyncRunStorage {
    * Get report count for a specific test case
    */
   async getReportCountByTestCase(testCaseId: string): Promise<number> {
-    const reports = await opensearchRuns.getByTestCase(testCaseId, 0);
-    return reports.length;
+    const result = await opensearchRuns.getByTestCase(testCaseId, 0);
+    return result.total;
   }
 
   // ==================== Benchmark-Specific Operations ====================

@@ -215,12 +215,12 @@ const SpanIOCard: React.FC<SpanIOCardProps> = ({ data }) => {
               <div className="text-sm font-medium">{span.name}</div>
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 {toolName && (
-                  <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-400 border-amber-500/30">
+                  <Badge variant="outline" className="text-xs bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30">
                     {toolName}
                   </Badge>
                 )}
                 {modelId && (
-                  <Badge variant="outline" className="text-xs bg-purple-500/10 text-purple-400 border-purple-500/30">
+                  <Badge variant="outline" className="text-xs bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-500/10 dark:text-purple-300 dark:border-purple-500/30">
                     {modelId}
                   </Badge>
                 )}
@@ -343,19 +343,19 @@ export const SpanInputOutput: React.FC<SpanInputOutputProps> = ({ spans }) => {
           {spanIOData.length} spans with I/O data
         </span>
         {categoryCounts.agent > 0 && (
-          <Badge variant="outline" className="bg-blue-500/10 text-blue-400 border-blue-500/30">
+          <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30">
             <Bot size={10} className="mr-1" />
             Agent: {categoryCounts.agent}
           </Badge>
         )}
         {categoryCounts.llm > 0 && (
-          <Badge variant="outline" className="bg-purple-500/10 text-purple-400 border-purple-500/30">
+          <Badge variant="outline" className="bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-500/10 dark:text-purple-300 dark:border-purple-500/30">
             <Cpu size={10} className="mr-1" />
             LLM: {categoryCounts.llm}
           </Badge>
         )}
         {categoryCounts.tool > 0 && (
-          <Badge variant="outline" className="bg-amber-500/10 text-amber-400 border-amber-500/30">
+          <Badge variant="outline" className="bg-amber-100 text-amber-800 border-amber-300 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30">
             <Wrench size={10} className="mr-1" />
             Tool: {categoryCounts.tool}
           </Badge>

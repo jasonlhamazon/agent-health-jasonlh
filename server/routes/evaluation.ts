@@ -16,6 +16,8 @@ import { isStorageAvailable, requireStorageClient } from '../middleware/storageC
 import { SAMPLE_TEST_CASES } from '../../cli/demo/sampleTestCases.js';
 import { runSingleUseCase } from '../../services/benchmarkRunner.js';
 import { loadConfigSync } from '../../lib/config/index.js';
+import { getCustomAgents } from '../services/customAgentStore.js';
+import { debug } from '@/lib/debug';
 import type { BenchmarkRun, TestCase } from '../../types/index.js';
 
 const router = Router();
@@ -100,7 +102,7 @@ function toTestCase(sample: typeof SAMPLE_TEST_CASES[0]): TestCase {
  * Report is automatically saved to storage if configured.
  */
 router.post('/api/evaluate', async (req: Request, res: Response) => {
-  console.log('[EvaluationAPI] Received evaluation request');
+  debug('EvalAPI', 'Received evaluation request');
 
   const validationError = validateRequest(req.body);
   if (validationError) {
@@ -109,11 +111,12 @@ router.post('/api/evaluate', async (req: Request, res: Response) => {
 
   const { testCaseId, agentKey, modelId, agentEndpoint } = req.body;
   const inlineTestCase = req.body.testCase as TestCase | undefined;
-  console.log('[EvaluationAPI] testCaseId:', testCaseId, 'agentKey:', agentKey, 'modelId:', modelId, 'inline:', !!inlineTestCase);
+  debug('EvalAPI', 'testCaseId:', testCaseId, 'agentKey:', agentKey, 'modelId:', modelId, 'inline:', !!inlineTestCase);
 
-  // Validate agent exists
+  // Validate agent exists (check both built-in and custom agents)
   const config = loadConfigSync();
-  const agent = config.agents.find(a => a.key === agentKey || a.name.toLowerCase() === agentKey.toLowerCase());
+  const allAgents = [...config.agents, ...getCustomAgents()];
+  const agent = allAgents.find(a => a.key === agentKey || a.name.toLowerCase() === agentKey.toLowerCase());
   if (!agent) {
     return res.status(400).json({ error: `Agent not found: ${agentKey}` });
   }
@@ -173,7 +176,7 @@ router.post('/api/evaluate', async (req: Request, res: Response) => {
     return res.status(404).json({ error: `Test case not found: ${testCaseId || 'inline'}` });
   }
 
-  console.log('[EvaluationAPI] Test case found:', testCase.name);
+  debug('EvalAPI', 'Test case found:', testCase.name);
 
   // Build run configuration
   const runConfig: BenchmarkRun = {

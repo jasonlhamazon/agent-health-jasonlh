@@ -70,7 +70,8 @@ export const BenchmarkSummaryCharts: React.FC<BenchmarkSummaryChartsProps> = ({
     return (runs || []).map(run => {
       let totalAccuracy = 0;
       let passCount = 0;
-      let totalCount = 0;
+      let completedCount = 0;
+      const totalCount = Object.keys(run.results || {}).length;
 
       Object.entries(run.results || {}).forEach(([, result]) => {
         if (result.reportId && result.status === 'completed') {
@@ -78,7 +79,7 @@ export const BenchmarkSummaryCharts: React.FC<BenchmarkSummaryChartsProps> = ({
           if (report && report.status === 'completed') {
             totalAccuracy += report.metrics?.accuracy ?? 0;
             if (report.passFailStatus === 'passed') passCount++;
-            totalCount++;
+            completedCount++;
           }
         }
       });
@@ -87,9 +88,9 @@ export const BenchmarkSummaryCharts: React.FC<BenchmarkSummaryChartsProps> = ({
         runId: run.id,
         runName: run.name,
         passCount,
-        failCount: totalCount - passCount,
+        failCount: completedCount - passCount,
         totalCount,
-        avgAccuracy: totalCount > 0 ? Math.round(totalAccuracy / totalCount) : 0,
+        avgAccuracy: completedCount > 0 ? Math.round(totalAccuracy / completedCount) : 0,
         passRatePercent: totalCount > 0 ? Math.round((passCount / totalCount) * 100) : 0,
       };
     });
@@ -227,7 +228,7 @@ export const BenchmarkSummaryCharts: React.FC<BenchmarkSummaryChartsProps> = ({
                   <Clock size={12} />
                   Avg Duration
                 </div>
-                <div className="text-2xl font-bold text-purple-400">
+                <div className="text-2xl font-bold text-purple-700 dark:text-purple-400">
                   {formatDuration(traceMetrics.avgDurationMs)}
                 </div>
                 <div className="text-xs text-muted-foreground">

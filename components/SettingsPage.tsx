@@ -4,8 +4,9 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { AlertTriangle, Trash2, Database, CheckCircle2, XCircle, Upload, Download, Loader2, Server, Plus, Edit2, X, Save, ExternalLink, Eye, EyeOff, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Trash2, Database, CheckCircle2, XCircle, Upload, Download, Loader2, Server, Plus, Edit2, X, Save, ExternalLink, Eye, EyeOff, ChevronDown, ChevronRight, RefreshCw, Palette } from 'lucide-react';
 import { isDebugEnabled, setDebugEnabled } from '@/lib/debug';
+import { getTheme, setTheme, type Theme } from '@/lib/theme';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -58,7 +59,9 @@ function getCustomEndpointsFromConfig(): AgentEndpoint[] {
 }
 
 export const SettingsPage: React.FC = () => {
+  console.log('SettingsPage loaded - built-in badge should be BLUE');
   const [debugMode, setDebugMode] = useState(false);
+  const [currentTheme, setCurrentTheme] = useState<Theme>('dark');
   const [storageStats, setStorageStats] = useState<StorageStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -158,6 +161,7 @@ export const SettingsPage: React.FC = () => {
 
   useEffect(() => {
     setDebugMode(isDebugEnabled());
+    setCurrentTheme(getTheme());
     loadStorageStats();
     loadConfigStatus();
 
@@ -307,9 +311,24 @@ export const SettingsPage: React.FC = () => {
     setEndpointUrlError(null);
   };
 
-  const handleDebugToggle = (checked: boolean) => {
+  const handleDebugToggle = async (checked: boolean) => {
     setDebugEnabled(checked);
     setDebugMode(checked);
+    // Sync debug state to the server so server-side logging is also toggled
+    try {
+      await fetch(`${ENV_CONFIG.backendUrl}/api/debug`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: checked }),
+      });
+    } catch {
+      // Best effort - server may not be running
+    }
+  };
+
+  const handleThemeChange = (theme: Theme) => {
+    setTheme(theme);
+    setCurrentTheme(theme);
   };
 
   const handleMigrate = async () => {
@@ -548,6 +567,40 @@ export const SettingsPage: React.FC = () => {
     <div className="p-6 max-w-4xl mx-auto" data-testid="settings-page">
       <h2 className="text-2xl font-bold mb-6" data-testid="settings-title">Settings</h2>
 
+      {/* Preferences */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Palette size={18} />
+            Preferences
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-3">
+            <Label className="text-sm font-medium">Theme</Label>
+            <div className="flex gap-3">
+              <Button
+                variant={currentTheme === 'light' ? 'default' : 'outline'}
+                onClick={() => handleThemeChange('light')}
+                className="flex-1"
+              >
+                Light Mode
+              </Button>
+              <Button
+                variant={currentTheme === 'dark' ? 'default' : 'outline'}
+                onClick={() => handleThemeChange('dark')}
+                className="flex-1"
+              >
+                Dark Mode
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Choose your preferred color theme for the interface
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Debug Settings */}
       <Card className="mb-6">
         <CardHeader>
@@ -560,8 +613,8 @@ export const SettingsPage: React.FC = () => {
                 Verbose Logging
               </Label>
               <p className="text-xs text-muted-foreground">
-                Enable detailed console.debug() logs for SSE events, trajectory conversion, and evaluation flow.
-                Open browser DevTools to view logs.
+                Enable detailed console.debug() logs for SSE events, trajectory conversion, and evaluation flow
+                in both browser console and server terminal output.
               </p>
             </div>
             <Switch
@@ -575,7 +628,7 @@ export const SettingsPage: React.FC = () => {
             <Alert className="bg-amber-900/20 border-amber-700/30">
               <AlertTriangle className="h-4 w-4 text-amber-400" />
               <AlertDescription className="text-amber-400">
-                Debug mode enabled. Check browser console for detailed logs.
+                Debug mode enabled. Check browser console and server terminal for detailed logs.
               </AlertDescription>
             </Alert>
           )}
@@ -595,7 +648,9 @@ export const SettingsPage: React.FC = () => {
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground uppercase tracking-wide">Built-in Agents</Label>
 
-            {DEFAULT_CONFIG.agents.filter(a => !a.isCustom).map((agent) => (
+            {DEFAULT_CONFIG.agents.filter(a => !a.isCustom).map((agent) => {
+              console.log('Rendering built-in agent:', agent.name, 'isCustom:', agent.isCustom);
+              return (
                 <div
                   key={agent.key}
                   className="p-3 border rounded-lg bg-muted/5 flex items-start justify-between gap-3"
@@ -603,7 +658,24 @@ export const SettingsPage: React.FC = () => {
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm flex items-center gap-2">
                       {agent.name}
-                      <span className="text-[10px] px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded">built-in</span>
+                      <span 
+                        className="text-xs px-2 py-1 rounded inline-block"
+                        style={
+                          currentTheme === 'dark' 
+                            ? {
+                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                color: 'rgb(96, 165, 250)',
+                                border: '1px solid rgba(59, 130, 246, 0.3)'
+                              }
+                            : {
+                                backgroundColor: 'rgb(219, 234, 254)',
+                                color: 'rgb(29, 78, 216)',
+                                border: '1px solid rgb(147, 197, 253)'
+                              }
+                        }
+                      >
+                        built-in
+                      </span>
                     </div>
                     <div className="text-xs text-muted-foreground truncate flex items-center gap-1 mt-1">
                       <ExternalLink size={10} />
@@ -614,7 +686,8 @@ export const SettingsPage: React.FC = () => {
                     )}
                   </div>
                 </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Custom Endpoints Section */}
@@ -633,7 +706,7 @@ export const SettingsPage: React.FC = () => {
               )}
             </div>
             <p className="text-xs text-muted-foreground mb-3">
-              Add custom agent endpoints. These are stored on the server (in memory, lost on restart).
+              Add custom agent endpoints. These are persisted to agent-health.config.json in your project directory.
             </p>
           </div>
 
@@ -742,6 +815,7 @@ export const SettingsPage: React.FC = () => {
                           size="sm"
                           onClick={() => handleDeleteEndpoint(ep.id)}
                           className="text-red-400 hover:text-red-300"
+                          aria-label={`Remove ${ep.name}`}
                         >
                           <Trash2 size={14} />
                         </Button>
@@ -846,11 +920,22 @@ export const SettingsPage: React.FC = () => {
           {configStatus?.storage && (
             <div className="flex items-center gap-2 text-xs">
               <span className="text-muted-foreground">Currently configured via:</span>
-              <span className={`px-2 py-0.5 rounded ${
-                configStatus.storage.source === 'file' ? 'bg-green-500/20 text-green-400' :
-                configStatus.storage.source === 'environment' ? 'bg-blue-500/20 text-blue-400' :
-                'bg-gray-500/20 text-gray-400'
-              }`}>
+              <span 
+                className="px-2 py-0.5 rounded"
+                style={
+                  configStatus.storage.source === 'file' 
+                    ? (currentTheme === 'dark'
+                        ? { backgroundColor: 'rgba(34, 197, 94, 0.1)', color: 'rgb(134, 239, 172)', border: '1px solid rgba(34, 197, 94, 0.3)' }
+                        : { backgroundColor: 'rgb(220, 252, 231)', color: 'rgb(21, 128, 61)', border: '1px solid rgb(134, 239, 172)' })
+                    : configStatus.storage.source === 'environment'
+                    ? (currentTheme === 'dark'
+                        ? { backgroundColor: 'rgba(59, 130, 246, 0.1)', color: 'rgb(96, 165, 250)', border: '1px solid rgba(59, 130, 246, 0.3)' }
+                        : { backgroundColor: 'rgb(219, 234, 254)', color: 'rgb(29, 78, 216)', border: '1px solid rgb(147, 197, 253)' })
+                    : (currentTheme === 'dark'
+                        ? { backgroundColor: 'rgba(107, 114, 128, 0.1)', color: 'rgb(156, 163, 175)', border: '1px solid rgba(107, 114, 128, 0.3)' }
+                        : { backgroundColor: 'rgb(243, 244, 246)', color: 'rgb(55, 65, 81)', border: '1px solid rgb(209, 213, 219)' })
+                }
+              >
                 {configStatus.storage.source === 'file' ? 'Server file (agent-health.yaml)' :
                  configStatus.storage.source === 'environment' ? 'Environment variables' :
                  'Not configured'}
@@ -1097,11 +1182,22 @@ export const SettingsPage: React.FC = () => {
           {configStatus?.observability && (
             <div className="flex items-center gap-2 text-xs">
               <span className="text-muted-foreground">Currently configured via:</span>
-              <span className={`px-2 py-0.5 rounded ${
-                configStatus.observability.source === 'file' ? 'bg-green-500/20 text-green-400' :
-                configStatus.observability.source === 'environment' ? 'bg-blue-500/20 text-blue-400' :
-                'bg-gray-500/20 text-gray-400'
-              }`}>
+              <span 
+                className="px-2 py-0.5 rounded"
+                style={
+                  configStatus.observability.source === 'file' 
+                    ? (currentTheme === 'dark'
+                        ? { backgroundColor: 'rgba(34, 197, 94, 0.1)', color: 'rgb(134, 239, 172)', border: '1px solid rgba(34, 197, 94, 0.3)' }
+                        : { backgroundColor: 'rgb(220, 252, 231)', color: 'rgb(21, 128, 61)', border: '1px solid rgb(134, 239, 172)' })
+                    : configStatus.observability.source === 'environment'
+                    ? (currentTheme === 'dark'
+                        ? { backgroundColor: 'rgba(59, 130, 246, 0.1)', color: 'rgb(96, 165, 250)', border: '1px solid rgba(59, 130, 246, 0.3)' }
+                        : { backgroundColor: 'rgb(219, 234, 254)', color: 'rgb(29, 78, 216)', border: '1px solid rgb(147, 197, 253)' })
+                    : (currentTheme === 'dark'
+                        ? { backgroundColor: 'rgba(107, 114, 128, 0.1)', color: 'rgb(156, 163, 175)', border: '1px solid rgba(107, 114, 128, 0.3)' }
+                        : { backgroundColor: 'rgb(243, 244, 246)', color: 'rgb(55, 65, 81)', border: '1px solid rgb(209, 213, 219)' })
+                }
+              >
                 {configStatus.observability.source === 'file' ? 'Server file (agent-health.yaml)' :
                  configStatus.observability.source === 'environment' ? 'Environment variables' :
                  'Not configured'}

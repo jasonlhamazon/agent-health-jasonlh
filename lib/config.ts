@@ -11,6 +11,8 @@
  * See: vite.config.ts and https://vitejs.dev/guide/env-and-mode.html
  */
 
+import { debug } from '@/lib/debug';
+
 // =============================================================================
 // Backend URL Configuration (single source of truth)
 // =============================================================================
@@ -58,6 +60,13 @@ export interface EnvConfig {
   mlcommonsHeaderAwsAccessKeyId: string;
   mlcommonsHeaderAwsSecretAccessKey: string;
   mlcommonsHeaderAwsSessionToken: string;
+
+  // Claude Code Telemetry (optional - for OTEL traces from Claude Code)
+  claudeCodeTelemetryEnabled: boolean;
+  otelExporterEndpoint: string;
+  otelServiceName: string;
+  otelExporterProtocol: string;
+  otelExporterHeaders: string;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -119,6 +128,13 @@ export const ENV_CONFIG: EnvConfig = {
   mlcommonsHeaderAwsAccessKeyId: getEnvVar('MLCOMMONS_HEADER_AWS_ACCESS_KEY_ID', ''),
   mlcommonsHeaderAwsSecretAccessKey: getEnvVar('MLCOMMONS_HEADER_AWS_SECRET_ACCESS_KEY', ''),
   mlcommonsHeaderAwsSessionToken: getEnvVar('MLCOMMONS_HEADER_AWS_SESSION_TOKEN', ''),
+
+  // Claude Code Telemetry (optional - for OTEL traces from Claude Code)
+  claudeCodeTelemetryEnabled: getEnvVar('CLAUDE_CODE_TELEMETRY_ENABLED', 'false') === 'true',
+  otelExporterEndpoint: getEnvVar('OTEL_EXPORTER_OTLP_ENDPOINT', ''),
+  otelServiceName: getEnvVar('OTEL_SERVICE_NAME', 'claude-code-agent'),
+  otelExporterProtocol: getEnvVar('OTEL_EXPORTER_OTLP_PROTOCOL', ''),
+  otelExporterHeaders: getEnvVar('OTEL_EXPORTER_OTLP_HEADERS', ''),
 };
 
 /**
@@ -129,6 +145,7 @@ export const ENV_CONFIG: EnvConfig = {
  * Region is always included as it may be needed for both auth methods
  */
 export function buildMLCommonsHeaders(): Record<string, string> {
+  debug('Config', 'Building ML-Commons headers');
   const headers: Record<string, string> = {};
 
   if (ENV_CONFIG.mlcommonsHeaderOpenSearchUrl) {
@@ -159,5 +176,6 @@ export function buildMLCommonsHeaders(): Record<string, string> {
     }
   }
 
+  debug('Config', 'ML-Commons headers built, keys:', Object.keys(headers));
   return headers;
 }
