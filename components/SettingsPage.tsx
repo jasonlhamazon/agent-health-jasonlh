@@ -658,24 +658,7 @@ export const SettingsPage: React.FC = () => {
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm flex items-center gap-2">
                       {agent.name}
-                      <span 
-                        className="text-xs px-2 py-1 rounded inline-block"
-                        style={
-                          currentTheme === 'dark' 
-                            ? {
-                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                                color: 'rgb(96, 165, 250)',
-                                border: '1px solid rgba(59, 130, 246, 0.3)'
-                              }
-                            : {
-                                backgroundColor: 'rgb(219, 234, 254)',
-                                color: 'rgb(29, 78, 216)',
-                                border: '1px solid rgb(147, 197, 253)'
-                              }
-                        }
-                      >
-                        built-in
-                      </span>
+                      <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800 rounded">built-in</span>
                     </div>
                     <div className="text-xs text-muted-foreground truncate flex items-center gap-1 mt-1">
                       <ExternalLink size={10} />
@@ -920,22 +903,11 @@ export const SettingsPage: React.FC = () => {
           {configStatus?.storage && (
             <div className="flex items-center gap-2 text-xs">
               <span className="text-muted-foreground">Currently configured via:</span>
-              <span 
-                className="px-2 py-0.5 rounded"
-                style={
-                  configStatus.storage.source === 'file' 
-                    ? (currentTheme === 'dark'
-                        ? { backgroundColor: 'rgba(34, 197, 94, 0.1)', color: 'rgb(134, 239, 172)', border: '1px solid rgba(34, 197, 94, 0.3)' }
-                        : { backgroundColor: 'rgb(220, 252, 231)', color: 'rgb(21, 128, 61)', border: '1px solid rgb(134, 239, 172)' })
-                    : configStatus.storage.source === 'environment'
-                    ? (currentTheme === 'dark'
-                        ? { backgroundColor: 'rgba(59, 130, 246, 0.1)', color: 'rgb(96, 165, 250)', border: '1px solid rgba(59, 130, 246, 0.3)' }
-                        : { backgroundColor: 'rgb(219, 234, 254)', color: 'rgb(29, 78, 216)', border: '1px solid rgb(147, 197, 253)' })
-                    : (currentTheme === 'dark'
-                        ? { backgroundColor: 'rgba(107, 114, 128, 0.1)', color: 'rgb(156, 163, 175)', border: '1px solid rgba(107, 114, 128, 0.3)' }
-                        : { backgroundColor: 'rgb(243, 244, 246)', color: 'rgb(55, 65, 81)', border: '1px solid rgb(209, 213, 219)' })
-                }
-              >
+              <span className={`px-2 py-0.5 rounded ${
+                configStatus.storage.source === 'file' ? 'bg-green-50 text-green-700 border border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800' :
+                configStatus.storage.source === 'environment' ? 'bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800' :
+                'bg-gray-50 text-gray-700 border border-gray-200 dark:bg-gray-800/30 dark:text-gray-400 dark:border-gray-700'
+              }`}>
                 {configStatus.storage.source === 'file' ? 'Server file (agent-health.yaml)' :
                  configStatus.storage.source === 'environment' ? 'Environment variables' :
                  'Not configured'}
@@ -1182,22 +1154,11 @@ export const SettingsPage: React.FC = () => {
           {configStatus?.observability && (
             <div className="flex items-center gap-2 text-xs">
               <span className="text-muted-foreground">Currently configured via:</span>
-              <span 
-                className="px-2 py-0.5 rounded"
-                style={
-                  configStatus.observability.source === 'file' 
-                    ? (currentTheme === 'dark'
-                        ? { backgroundColor: 'rgba(34, 197, 94, 0.1)', color: 'rgb(134, 239, 172)', border: '1px solid rgba(34, 197, 94, 0.3)' }
-                        : { backgroundColor: 'rgb(220, 252, 231)', color: 'rgb(21, 128, 61)', border: '1px solid rgb(134, 239, 172)' })
-                    : configStatus.observability.source === 'environment'
-                    ? (currentTheme === 'dark'
-                        ? { backgroundColor: 'rgba(59, 130, 246, 0.1)', color: 'rgb(96, 165, 250)', border: '1px solid rgba(59, 130, 246, 0.3)' }
-                        : { backgroundColor: 'rgb(219, 234, 254)', color: 'rgb(29, 78, 216)', border: '1px solid rgb(147, 197, 253)' })
-                    : (currentTheme === 'dark'
-                        ? { backgroundColor: 'rgba(107, 114, 128, 0.1)', color: 'rgb(156, 163, 175)', border: '1px solid rgba(107, 114, 128, 0.3)' }
-                        : { backgroundColor: 'rgb(243, 244, 246)', color: 'rgb(55, 65, 81)', border: '1px solid rgb(209, 213, 219)' })
-                }
-              >
+              <span className={`px-2 py-0.5 rounded ${
+                configStatus.observability.source === 'file' ? 'bg-green-50 text-green-700 border border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800' :
+                configStatus.observability.source === 'environment' ? 'bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800' :
+                'bg-gray-50 text-gray-700 border border-gray-200 dark:bg-gray-800/30 dark:text-gray-400 dark:border-gray-700'
+              }`}>
                 {configStatus.observability.source === 'file' ? 'Server file (agent-health.yaml)' :
                  configStatus.observability.source === 'environment' ? 'Environment variables' :
                  'Not configured'}
