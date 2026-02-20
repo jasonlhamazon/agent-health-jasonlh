@@ -658,7 +658,7 @@ export const SettingsPage: React.FC = () => {
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm flex items-center gap-2">
                       {agent.name}
-                      <span className="text-xs px-2 py-1 rounded inline-block bg-blue-100 text-blue-900 border border-blue-300 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30">
+                      <span className="text-xs px-2 py-1 rounded inline-block bg-blue-100 text-blue-900 border border-blue-300 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-700/50">
                         built-in
                       </span>
                     </div>
@@ -907,10 +907,10 @@ export const SettingsPage: React.FC = () => {
               <span className="text-muted-foreground">Currently configured via:</span>
               <span className={`px-2 py-0.5 rounded ${
                 configStatus.storage.source === 'file' 
-                  ? 'bg-green-100 text-green-900 border border-green-300 dark:bg-green-500/10 dark:text-green-300 dark:border-green-500/30'
+                  ? 'bg-green-100 text-green-900 border border-green-300 dark:bg-green-950/50 dark:text-green-300 dark:border-green-700/50'
                   : configStatus.storage.source === 'environment' 
-                  ? 'bg-blue-100 text-blue-900 border border-blue-300 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30'
-                  : 'bg-gray-100 text-gray-900 border border-gray-300 dark:bg-gray-500/10 dark:text-gray-400 dark:border-gray-500/30'
+                  ? 'bg-blue-100 text-blue-900 border border-blue-300 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-700/50'
+                  : 'bg-gray-100 text-gray-900 border border-gray-300 dark:bg-gray-800/50 dark:text-gray-400 dark:border-gray-700/50'
               }`}>
                 {configStatus.storage.source === 'file' ? 'Server file (agent-health.yaml)' :
                  configStatus.storage.source === 'environment' ? 'Environment variables' :
@@ -1160,10 +1160,10 @@ export const SettingsPage: React.FC = () => {
               <span className="text-muted-foreground">Currently configured via:</span>
               <span className={`px-2 py-0.5 rounded ${
                 configStatus.observability.source === 'file' 
-                  ? 'bg-green-100 text-green-900 border border-green-300 dark:bg-green-500/10 dark:text-green-300 dark:border-green-500/30'
+                  ? 'bg-green-100 text-green-900 border border-green-300 dark:bg-green-950/50 dark:text-green-300 dark:border-green-700/50'
                   : configStatus.observability.source === 'environment' 
-                  ? 'bg-blue-100 text-blue-900 border border-blue-300 dark:bg-blue-500/10 dark:text-blue-300 dark:border-blue-500/30'
-                  : 'bg-gray-100 text-gray-900 border border-gray-300 dark:bg-gray-500/10 dark:text-gray-400 dark:border-gray-500/30'
+                  ? 'bg-blue-100 text-blue-900 border border-blue-300 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-700/50'
+                  : 'bg-gray-100 text-gray-900 border border-gray-300 dark:bg-gray-800/50 dark:text-gray-400 dark:border-gray-700/50'
               }`}>
                 {configStatus.observability.source === 'file' ? 'Server file (agent-health.yaml)' :
                  configStatus.observability.source === 'environment' ? 'Environment variables' :
