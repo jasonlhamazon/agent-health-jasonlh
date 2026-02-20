@@ -169,8 +169,8 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
           )}
         </SidebarHeader>
 
-        <SidebarContent className="px-3 pt-0 pb-2">
-          <SidebarGroup className="p-0">
+        <SidebarContent className="px-3 py-2">
+          <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu className="space-y-1">
                 {navItems.map((item) => (
