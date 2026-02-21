@@ -29,6 +29,7 @@ import {
   Network,
   List,
   GitBranch,
+  Info,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -380,7 +381,7 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
                   </TooltipTrigger>
                   <TooltipContent 
                     side="bottom" 
-                    className="bg-gray-900 dark:bg-gray-950 border-gray-800 p-3 max-w-xs text-white [&>svg]:fill-gray-900 dark:[&>svg]:fill-gray-950"
+                    className="bg-gray-900 dark:bg-gray-800 border-gray-800 p-3 max-w-xs text-white [&>svg]:fill-gray-900 dark:[&>svg]:fill-gray-800"
                   >
                     <div className="space-y-1.5">
                       <div className="text-xs font-semibold mb-2">Time Distribution</div>
@@ -656,13 +657,13 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
               Trace tree
             </Button>
             <Button
-              variant={viewMode === 'flow' ? 'default' : 'ghost'}
+              variant={viewMode === 'agent-map' ? 'default' : 'ghost'}
               size="sm"
               className="h-7 px-3 text-xs"
-              onClick={() => setViewMode('flow')}
+              onClick={() => setViewMode('agent-map')}
             >
               <GitBranch size={14} className="mr-1.5" />
-              Agent graph
+              Agent map
             </Button>
             <Button
               variant={viewMode === 'gantt' ? 'default' : 'ghost'}
@@ -672,6 +673,15 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
             >
               <List size={14} className="mr-1.5" />
               Timeline
+            </Button>
+            <Button
+              variant={viewMode === 'stats' ? 'default' : 'ghost'}
+              size="sm"
+              className="h-7 px-3 text-xs"
+              onClick={() => setViewMode('stats')}
+            >
+              <Info size={14} className="mr-1.5" />
+              Info
             </Button>
           </div>
         </div>
