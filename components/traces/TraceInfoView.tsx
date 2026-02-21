@@ -48,8 +48,8 @@ const TraceInfoView: React.FC<TraceInfoViewProps> = ({ spanTree, runId }) => {
   // Calculate time range
   const timeRange = useMemo(() => {
     if (allSpans.length === 0) return { duration: 0 };
-    const startTime = Math.min(...allSpans.map(s => s.startTime));
-    const endTime = Math.max(...allSpans.map(s => s.endTime));
+    const startTime = Math.min(...allSpans.map(s => new Date(s.startTime).getTime()));
+    const endTime = Math.max(...allSpans.map(s => new Date(s.endTime).getTime()));
     return { duration: endTime - startTime };
   }, [allSpans]);
 
@@ -115,7 +115,7 @@ const TraceInfoView: React.FC<TraceInfoViewProps> = ({ spanTree, runId }) => {
         count,
         duration: spans
           .filter(s => (s.attributes?.['gen_ai.tool.name'] || s.name) === name)
-          .reduce((sum, s) => sum + (s.endTime - s.startTime), 0),
+          .reduce((sum, s) => sum + (new Date(s.endTime).getTime() - new Date(s.startTime).getTime()), 0),
       }));
     }
 
@@ -130,7 +130,7 @@ const TraceInfoView: React.FC<TraceInfoViewProps> = ({ spanTree, runId }) => {
       count,
       duration: spans
         .filter(s => s.name === name)
-        .reduce((sum, s) => sum + (s.endTime - s.startTime), 0),
+        .reduce((sum, s) => sum + (new Date(s.endTime).getTime() - new Date(s.startTime).getTime()), 0),
     }));
   };
 
@@ -191,7 +191,7 @@ const TraceInfoView: React.FC<TraceInfoViewProps> = ({ spanTree, runId }) => {
 
   const startTime = useMemo(() => {
     if (allSpans.length === 0) return null;
-    return Math.min(...allSpans.map(s => s.startTime));
+    return Math.min(...allSpans.map(s => new Date(s.startTime).getTime()));
   }, [allSpans]);
 
   const formatTimestamp = (timestamp: number | null) => {
