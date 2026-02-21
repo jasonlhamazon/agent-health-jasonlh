@@ -320,6 +320,13 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
     try {
       console.info('[RunDetails] Fetching traces for runId:', report.runId);
       const result = await fetchTracesByRunIds([report.runId]);
+      
+      console.info('[RunDetails] Trace fetch result:', {
+        spansCount: result.spans?.length || 0,
+        total: result.total,
+        warning: result.warning,
+        hasSpans: !!(result.spans && result.spans.length > 0)
+      });
 
       if (result.spans && result.spans.length > 0) {
         setTraceSpans(result.spans);
@@ -329,9 +336,13 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
         // Auto-expand root spans
         const rootIds = new Set(tree.map(s => s.spanId));
         setExpandedSpans(rootIds);
-        console.info('[RunDetails] Traces loaded:', result.spans.length, 'spans');
+        console.info('[RunDetails] Traces loaded successfully:', result.spans.length, 'spans');
       } else {
-        setTracesError('No traces found for this run');
+        const errorMsg = result.warning 
+          ? `No traces found: ${result.warning}`
+          : 'No traces found for this run. Traces may take ~5 minutes to propagate after the run completes.';
+        console.warn('[RunDetails] No traces found:', errorMsg);
+        setTracesError(errorMsg);
       }
     } catch (error) {
       console.error('[RunDetails] Failed to fetch traces:', error);
