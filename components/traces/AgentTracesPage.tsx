@@ -420,106 +420,111 @@ export const AgentTracesPage: React.FC = () => {
     <div className="h-full flex flex-col">
       {/* Compact Header with Inline Stats and Filters */}
       <div className="px-6 pt-6 pb-4 border-b">
-        {/* Title and Description */}
-        <div className="mb-4">
-          <h2 className="text-2xl font-bold">Agent Traces</h2>
-          <p className="text-xs text-muted-foreground mt-1">
-            Analyze agent execution traces from OTEL
-          </p>
-        </div>
-
-        {/* Stats and Filters Row */}
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* Inline Stats */}
-          <div className="flex items-center gap-2 text-sm">
-            <div className="flex items-center gap-1">
-              <Activity size={13} className="text-opensearch-blue" />
-              <span className="font-semibold text-opensearch-blue">{allTraces.length}</span>
-              <span className="text-muted-foreground">traces</span>
-            </div>
-            <span className="text-muted-foreground">•</span>
-            <div className="flex items-center gap-1">
-              <BarChart3 size={13} className="text-purple-700 dark:text-purple-400" />
-              <span className="font-semibold text-purple-700 dark:text-purple-400">{spans.length}</span>
-              <span className="text-muted-foreground">spans</span>
-            </div>
-            <span className="text-muted-foreground">•</span>
-            <div className="flex items-center gap-1">
-              <AlertCircle size={13} className="text-red-700 dark:text-red-400" />
-              <span className="font-semibold text-red-700 dark:text-red-400">
-                {stats.total > 0 ? ((stats.errors / stats.total) * 100).toFixed(1) : 0}%
-              </span>
-              <span className="text-muted-foreground">({stats.errors}) errors</span>
-            </div>
-            <span className="text-muted-foreground">•</span>
-            <div className="flex items-center gap-1">
-              <Clock size={13} className="text-amber-700 dark:text-amber-400" />
-              <span className="font-semibold text-amber-700 dark:text-amber-400">
-                {formatDuration(stats.avgDuration)}
-              </span>
-              <span className="text-muted-foreground">avg latency</span>
-            </div>
+        {/* Single Row: Title + Stats + Filters */}
+        <div className="flex items-start justify-between gap-4">
+          {/* Left: Title and Description */}
+          <div className="flex-shrink-0">
+            <h2 className="text-2xl font-bold">Agent Traces</h2>
+            <p className="text-xs text-muted-foreground mt-1">
+              Analyze agent execution traces from OTEL
+            </p>
           </div>
 
-          {/* Search Bar */}
-          <div className="w-[220px]">
-            <div className="relative">
-              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search"
-                value={textSearch}
-                onChange={(e) => setTextSearch(e.target.value)}
-                className="pl-8 h-8 text-sm"
-              />
+          {/* Right: Stats and Filters with Last Updated below */}
+          <div className="flex flex-col items-end gap-1 flex-shrink-0">
+            <div className="flex items-center gap-3">
+              {/* Inline Stats */}
+              <div className="flex items-center gap-2 text-sm">
+                <div className="flex items-center gap-1">
+                  <Activity size={13} className="text-opensearch-blue" />
+                  <span className="font-semibold text-opensearch-blue">{allTraces.length}</span>
+                  <span className="text-muted-foreground">traces</span>
+                </div>
+                <span className="text-muted-foreground">•</span>
+                <div className="flex items-center gap-1">
+                  <BarChart3 size={13} className="text-purple-700 dark:text-purple-400" />
+                  <span className="font-semibold text-purple-700 dark:text-purple-400">{spans.length}</span>
+                  <span className="text-muted-foreground">spans</span>
+                </div>
+                <span className="text-muted-foreground">•</span>
+                <div className="flex items-center gap-1">
+                  <AlertCircle size={13} className="text-red-700 dark:text-red-400" />
+                  <span className="font-semibold text-red-700 dark:text-red-400">
+                    {stats.total > 0 ? ((stats.errors / stats.total) * 100).toFixed(1) : 0}%
+                  </span>
+                  <span className="text-muted-foreground">({stats.errors}) errors</span>
+                </div>
+                <span className="text-muted-foreground">•</span>
+                <div className="flex items-center gap-1">
+                  <Clock size={13} className="text-amber-700 dark:text-amber-400" />
+                  <span className="font-semibold text-amber-700 dark:text-amber-400">
+                    {formatDuration(stats.avgDuration)}
+                  </span>
+                  <span className="text-muted-foreground">avg latency</span>
+                </div>
+              </div>
+
+              {/* Search Bar */}
+              <div className="w-[220px]">
+                <div className="relative">
+                  <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Search"
+                    value={textSearch}
+                    onChange={(e) => setTextSearch(e.target.value)}
+                    className="pl-8 h-8 text-sm"
+                  />
+                </div>
+              </div>
+
+              {/* Agent Filter */}
+              <Select value={selectedAgent} onValueChange={setSelectedAgent}>
+                <SelectTrigger className="w-[110px] h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {agentOptions.map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* Time Range */}
+              <Select value={timeRange} onValueChange={setTimeRange}>
+                <SelectTrigger className="w-[90px] h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {timeRangeOptions.map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* Refresh Button */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchTraces}
+                disabled={isLoading}
+                className="h-8"
+              >
+                <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+              </Button>
             </div>
+            
+            {/* Last Updated - Below stats and filters */}
+            {lastRefresh && (
+              <span className="text-xs text-muted-foreground">
+                Last updated: {lastRefresh.toLocaleTimeString()}
+              </span>
+            )}
           </div>
-
-          {/* Agent Filter */}
-          <Select value={selectedAgent} onValueChange={setSelectedAgent}>
-            <SelectTrigger className="w-[110px] h-8 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {agentOptions.map(opt => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* Time Range */}
-          <Select value={timeRange} onValueChange={setTimeRange}>
-            <SelectTrigger className="w-[90px] h-8 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {timeRangeOptions.map(opt => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* Refresh Button */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={fetchTraces}
-            disabled={isLoading}
-            className="h-8"
-          >
-            <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
-          </Button>
         </div>
-        
-        {/* Last Updated - Second Line */}
-        {lastRefresh && (
-          <span className="text-xs text-muted-foreground mt-2 block">
-            Last updated: {lastRefresh.toLocaleTimeString()}
-          </span>
-        )}
       </div>
 
       {/* Metrics Overview - Trends */}
