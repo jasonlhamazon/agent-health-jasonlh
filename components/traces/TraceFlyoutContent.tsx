@@ -15,7 +15,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import {
   X,
-  Activity,
   Clock,
   CheckCircle2,
   XCircle,
@@ -24,27 +23,38 @@ import {
   Copy,
   Check,
   Maximize2,
-  Hash,
-  Server,
-  Cpu,
   MessageSquare,
   Wrench,
   Bot,
-  ArrowRight,
-  ArrowLeft,
+  Network,
+  List,
+  GitBranch,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { Span, TimeRange } from '@/types';
-import { processSpansIntoTree, calculateTimeRange } from '@/services/traces';
+import { processSpansIntoTree, calculateTimeRange, getCategoryColors } from '@/services/traces';
 import { formatDuration } from '@/services/traces/utils';
 import TraceVisualization from './TraceVisualization';
 import ViewToggle, { ViewMode } from './ViewToggle';
 import TraceFullScreenView from './TraceFullScreenView';
 import { SpanInputOutput } from './SpanInputOutput';
+import SpanDetailsPanel from './SpanDetailsPanel';
+import {
+  flattenSpans,
+  calculateCategoryStats,
+  extractToolStats,
+} from '@/services/traces/traceStats';
+import { categorizeSpanTree } from '@/services/traces/spanCategorization';
+import { cn } from '@/lib/utils';
 
 interface TraceTableRow {
   traceId: string;
@@ -66,7 +76,6 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
   trace,
   onClose,
 }) => {
-  const [activeTab, setActiveTab] = useState('traces');
   const [viewMode, setViewMode] = useState<ViewMode>('timeline');
   const [selectedSpan, setSelectedSpan] = useState<Span | null>(null);
   const [expandedSpans, setExpandedSpans] = useState<Set<string>>(new Set());
@@ -234,68 +243,57 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
         </div>
       </div>
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-        <TabsList className="w-full justify-start rounded-none border-b bg-card h-auto p-0">
-          <TabsTrigger
-            value="traces"
-            className="rounded-none border-b-2 border-transparent data-[state=active]:border-opensearch-blue data-[state=active]:text-opensearch-blue"
-          >
-            <Activity size={14} className="mr-2" />
-            Traces
-            <Badge variant="secondary" className="ml-2">{trace.spanCount}</Badge>
-          </TabsTrigger>
-          <TabsTrigger
-            value="details"
-            className="rounded-none border-b-2 border-transparent data-[state=active]:border-opensearch-blue data-[state=active]:text-opensearch-blue"
-          >
-            <MessageSquare size={14} className="mr-2" />
-            Input/Output
-          </TabsTrigger>
-        </TabsList>
-
-        {/* Traces Tab */}
-        <TabsContent value="traces" className="flex-1 mt-0 overflow-hidden flex flex-col">
-          {/* View Toggle & Fullscreen */}
-          <div className="flex items-center justify-between p-3 border-b">
-            <ViewToggle viewMode={viewMode} onChange={setViewMode} />
+      {/* Main Content - View Toggle + Visualization */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* View Toggle */}
+        <div className="px-4 py-3 border-b bg-card">
+          <div className="inline-flex items-center rounded-lg border bg-muted p-1 gap-1">
             <Button
-              variant="outline"
+              variant={viewMode === 'timeline' ? 'default' : 'ghost'}
               size="sm"
-              onClick={() => setFullscreenOpen(true)}
-              className="gap-1.5"
+              className="h-7 px-3 text-xs"
+              onClick={() => setViewMode('timeline')}
             >
-              <Maximize2 size={14} />
-              Fullscreen
+              <Network size={14} className="mr-1.5" />
+              Trace tree
+            </Button>
+            <Button
+              variant={viewMode === 'flow' ? 'default' : 'ghost'}
+              size="sm"
+              className="h-7 px-3 text-xs"
+              onClick={() => setViewMode('flow')}
+            >
+              <GitBranch size={14} className="mr-1.5" />
+              Agent graph
+            </Button>
+            <Button
+              variant={viewMode === 'gantt' ? 'default' : 'ghost'}
+              size="sm"
+              className="h-7 px-3 text-xs"
+              onClick={() => setViewMode('gantt')}
+            >
+              <List size={14} className="mr-1.5" />
+              Timeline
             </Button>
           </div>
+        </div>
 
-          {/* Trace Visualization */}
-          <div className="flex-1 overflow-hidden">
-            <TraceVisualization
-              spanTree={spanTree}
-              timeRange={timeRange}
-              initialViewMode={viewMode}
-              onViewModeChange={setViewMode}
-              showViewToggle={false}
-              selectedSpan={selectedSpan}
-              onSelectSpan={setSelectedSpan}
-              expandedSpans={expandedSpans}
-              onToggleExpand={handleToggleExpand}
-              showSpanDetailsPanel={true}
-            />
-          </div>
-        </TabsContent>
-
-        {/* Input/Output Tab */}
-        <TabsContent value="details" className="flex-1 mt-0 overflow-hidden">
-          <ScrollArea className="h-full">
-            <div className="p-4 space-y-4">
-              <SpanInputOutput spans={trace.spans} />
-            </div>
-          </ScrollArea>
-        </TabsContent>
-      </Tabs>
+        {/* Trace Visualization */}
+        <div className="flex-1 overflow-hidden">
+          <TraceVisualization
+            spanTree={spanTree}
+            timeRange={timeRange}
+            initialViewMode={viewMode}
+            onViewModeChange={setViewMode}
+            showViewToggle={false}
+            selectedSpan={selectedSpan}
+            onSelectSpan={setSelectedSpan}
+            expandedSpans={expandedSpans}
+            onToggleExpand={handleToggleExpand}
+            showSpanDetailsPanel={true}
+          />
+        </div>
+      </div>
 
       {/* Fullscreen View */}
       <TraceFullScreenView
