@@ -18,8 +18,10 @@ import ViewToggle, { ViewMode } from './ViewToggle';
 import TraceTimelineChart from './TraceTimelineChart';
 import TraceTreeTable from './TraceTreeTable';
 import TraceFlowView from './TraceFlowView';
+import AgentMapView from './AgentMapView';
 import SpanDetailsPanel from './SpanDetailsPanel';
 import TraceInfoView from './TraceInfoView';
+import TraceStatsView from './TraceStatsView';
 
 interface TraceVisualizationProps {
   spanTree: Span[];
@@ -191,6 +193,11 @@ const TraceVisualization: React.FC<TraceVisualizationProps> = ({
           <div className="h-full w-full overflow-auto">
             <TraceInfoView spanTree={spanTree} runId={runId} />
           </div>
+        ) : viewMode === 'stats' ? (
+          /* Stats view - summary statistics only (left panel from TraceFlowView) */
+          <div className="h-full w-full overflow-auto">
+            <TraceStatsView spanTree={spanTree} timeRange={timeRange} />
+          </div>
         ) : viewMode === 'flow' ? (
           <div className="h-full w-full">
             <TraceFlowView
@@ -254,23 +261,32 @@ const TraceVisualization: React.FC<TraceVisualizationProps> = ({
               />
             </div>
           )
-        ) : showSpanDetailsPanel ? (
-          /* Side-by-side layout for tree table with details panel - shown for 'timeline' (Trace Tree button) */
+        ) : (viewMode === 'timeline' || viewMode === 'agent-map') && showSpanDetailsPanel ? (
+          /* Side-by-side layout for tree table/agent map with details panel */
           <div className="flex h-full timeline-container relative">
-            {/* Tree table on left */}
+            {/* Tree table or Agent Map on left */}
             <div 
               className="overflow-auto p-4 border-r"
               style={{ 
                 width: detailsCollapsed ? '100%' : `${timelineWidth}%`
               }}
             >
-              <TraceTreeTable
-                spanTree={spanTree}
-                selectedSpan={selectedSpan}
-                onSelect={setSelectedSpan}
-                expandedSpans={expandedSpans}
-                onToggleExpand={handleToggleExpand}
-              />
+              {viewMode === 'agent-map' ? (
+                <AgentMapView
+                  spanTree={spanTree}
+                  timeRange={timeRange}
+                  selectedSpan={selectedSpan}
+                  onSelectSpan={setSelectedSpan}
+                />
+              ) : (
+                <TraceTreeTable
+                  spanTree={spanTree}
+                  selectedSpan={selectedSpan}
+                  onSelect={setSelectedSpan}
+                  expandedSpans={expandedSpans}
+                  onToggleExpand={handleToggleExpand}
+                />
+              )}
             </div>
             
             {/* Resizable divider */}
@@ -315,15 +331,24 @@ const TraceVisualization: React.FC<TraceVisualizationProps> = ({
             ) : null}
           </div>
         ) : (
-          /* Full width tree table without details panel */
+          /* Full width tree table or agent map without details panel */
           <div className="p-4 h-full overflow-auto">
-            <TraceTreeTable
-              spanTree={spanTree}
-              selectedSpan={selectedSpan}
-              onSelect={setSelectedSpan}
-              expandedSpans={expandedSpans}
-              onToggleExpand={handleToggleExpand}
-            />
+            {viewMode === 'agent-map' ? (
+              <AgentMapView
+                spanTree={spanTree}
+                timeRange={timeRange}
+                selectedSpan={selectedSpan}
+                onSelectSpan={setSelectedSpan}
+              />
+            ) : (
+              <TraceTreeTable
+                spanTree={spanTree}
+                selectedSpan={selectedSpan}
+                onSelect={setSelectedSpan}
+                expandedSpans={expandedSpans}
+                onToggleExpand={handleToggleExpand}
+              />
+            )}
           </div>
         )}
       </div>
