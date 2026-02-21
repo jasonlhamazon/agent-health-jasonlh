@@ -50,7 +50,31 @@ interface SpanIOData {
 }
 
 /**
- * Extract input/output from span attributes based on OTEL GenAI conventions
+ * Extract content from a span event by name.
+ * OTel GenAI semantic conventions store input/output as span events
+ * with attributes like { content: "..." } or { body: "..." }.
+ */
+function getEventContent(span: Span, eventName: string): string | null {
+  if (!span.events) return null;
+  const event = span.events.find(e => e.name === eventName);
+  if (!event?.attributes) return null;
+  const value = event.attributes['content'] ||
+                event.attributes['body'] ||
+                event.attributes['gen_ai.content'] ||
+                event.attributes['message'];
+  if (!value) return null;
+  return typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value);
+}
+
+/**
+ * Extract input/output from span attributes based on OTEL GenAI conventions.
+ *
+ * Checks both span attributes and span events, supporting:
+ * - Standard OTel GenAI: gen_ai.content.prompt / gen_ai.content.completion (events)
+ * - gen_ai.input.messages / gen_ai.output.messages (attributes)
+ * - Legacy: gen_ai.prompt / gen_ai.completion (attributes)
+ *
+ * @see https://opentelemetry.io/docs/specs/semconv/gen-ai/gen-ai-spans/
  */
 function extractSpanIO(span: Span): SpanIOData {
   const attrs = span.attributes || {};
@@ -70,18 +94,20 @@ function extractSpanIO(span: Span): SpanIOData {
   let input: string | null = null;
   let output: string | null = null;
 
-  // LLM spans - gen_ai.prompt and gen_ai.completion
+  // LLM spans - check span events first (standard OTel), then attributes
   if (category === 'llm') {
-    // Try different attribute names for prompts
-    input = attrs['gen_ai.prompt'] ||
+    input = getEventContent(span, 'gen_ai.content.prompt') ||
+            attrs['gen_ai.input.messages'] ||
+            attrs['gen_ai.prompt'] ||
             attrs['gen_ai.prompt.0.content'] ||
             attrs['llm.prompts'] ||
             attrs['llm.input_messages'] ||
             attrs['input.value'] ||
             null;
 
-    // Try different attribute names for completions
-    output = attrs['gen_ai.completion'] ||
+    output = getEventContent(span, 'gen_ai.content.completion') ||
+             attrs['gen_ai.output.messages'] ||
+             attrs['gen_ai.completion'] ||
              attrs['gen_ai.completion.0.content'] ||
              attrs['llm.completions'] ||
              attrs['llm.output_messages'] ||
@@ -89,30 +115,38 @@ function extractSpanIO(span: Span): SpanIOData {
              null;
   }
 
-  // Tool spans - gen_ai.tool.input and gen_ai.tool.output
+  // Tool spans - OTel standard: gen_ai.tool.call.arguments / gen_ai.tool.call.result
   if (category === 'tool') {
-    input = attrs['gen_ai.tool.input'] ||
+    input = attrs['gen_ai.tool.call.arguments'] ||
+            getEventContent(span, 'gen_ai.tool.input') ||
+            attrs['gen_ai.tool.input'] ||
             attrs['tool.input'] ||
             attrs['input.value'] ||
             attrs['tool.parameters'] ||
             null;
 
-    output = attrs['gen_ai.tool.output'] ||
+    output = attrs['gen_ai.tool.call.result'] ||
+             getEventContent(span, 'gen_ai.tool.output') ||
+             attrs['gen_ai.tool.output'] ||
              attrs['tool.output'] ||
              attrs['output.value'] ||
              attrs['tool.result'] ||
              null;
   }
 
-  // Agent spans - various inputs/outputs
+  // Agent spans - check events then attributes
   if (category === 'agent') {
-    input = attrs['gen_ai.agent.input'] ||
+    input = getEventContent(span, 'gen_ai.content.prompt') ||
+            attrs['gen_ai.input.messages'] ||
+            attrs['gen_ai.agent.input'] ||
             attrs['agent.input'] ||
             attrs['input.value'] ||
             attrs['user.message'] ||
             null;
 
-    output = attrs['gen_ai.agent.output'] ||
+    output = getEventContent(span, 'gen_ai.content.completion') ||
+             attrs['gen_ai.output.messages'] ||
+             attrs['gen_ai.agent.output'] ||
              attrs['agent.output'] ||
              attrs['output.value'] ||
              attrs['assistant.message'] ||
