@@ -53,6 +53,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getLabelColor, formatDate } from '@/lib/utils';
+import { getTheme } from '@/lib/theme';
 import { TestCaseEditor } from './TestCaseEditor';
 import { QuickRunModal } from './QuickRunModal';
 
@@ -93,6 +94,8 @@ interface TestCaseCardProps {
 }
 
 const TestCaseCard = ({ testCase, runCount, onClick, onRun, onEdit, onDelete, isDeleting }: TestCaseCardProps) => {
+  const isDarkMode = getTheme() === 'dark';
+  
   // Show first 3 labels
   const displayLabels = (testCase.labels || []).slice(0, 3);
 
@@ -107,7 +110,11 @@ const TestCaseCard = ({ testCase, runCount, onClick, onRun, onEdit, onDelete, is
             <CardTitle className="text-base truncate">{testCase.name}</CardTitle>
             <CardDescription className="flex items-center gap-2 mt-1 flex-wrap">
               {displayLabels.map((label) => (
-                <Badge key={label} variant="outline" className={getLabelColor(label)}>
+                <Badge 
+                  key={label} 
+                  variant="outline" 
+                  className={getLabelColor(label)}
+                >
                   {label}
                 </Badge>
               ))}

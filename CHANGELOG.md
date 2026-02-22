@@ -10,6 +10,9 @@ Inspired by [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## [Unreleased]
 
 ### Added
+- Trace flyout UI improvements: resizable panel, redesigned tabs, agent map DAG view, dark mode support ([#40](https://github.com/opensearch-project/agent-health/pull/40))
+- Trace timeline chart with span categorization and enhanced metrics overview ([#40](https://github.com/opensearch-project/agent-health/pull/40))
+- OTel GenAI semantic convention support for span input/output extraction including `gen_ai.input.messages`, `gen_ai.output.messages`, and span events ([#40](https://github.com/opensearch-project/agent-health/pull/40))
 - Light and dark mode theme support with dynamic switching and OUI font integration
 - Universal debug logging system with `lib/debug.ts` supporting both browser (localStorage) and Node.js (in-memory flag) environments
 - `GET/POST /api/debug` endpoint for runtime toggle of server-side verbose logging

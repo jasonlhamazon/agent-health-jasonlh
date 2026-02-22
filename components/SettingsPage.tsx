@@ -59,6 +59,7 @@ function getCustomEndpointsFromConfig(): AgentEndpoint[] {
 }
 
 export const SettingsPage: React.FC = () => {
+  console.log('SettingsPage loaded - built-in badge should be BLUE');
   const [debugMode, setDebugMode] = useState(false);
   const [currentTheme, setCurrentTheme] = useState<Theme>('dark');
   const [storageStats, setStorageStats] = useState<StorageStats | null>(null);
@@ -647,7 +648,9 @@ export const SettingsPage: React.FC = () => {
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground uppercase tracking-wide">Built-in Agents</Label>
 
-            {DEFAULT_CONFIG.agents.filter(a => !a.isCustom).map((agent) => (
+            {DEFAULT_CONFIG.agents.filter(a => !a.isCustom).map((agent) => {
+              console.log('Rendering built-in agent:', agent.name, 'isCustom:', agent.isCustom);
+              return (
                 <div
                   key={agent.key}
                   className="p-3 border rounded-lg bg-muted/5 flex items-start justify-between gap-3"
@@ -655,7 +658,9 @@ export const SettingsPage: React.FC = () => {
                   <div className="flex-1 min-w-0">
                     <div className="font-medium text-sm flex items-center gap-2">
                       {agent.name}
-                      <span className="text-[10px] px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800 rounded">built-in</span>
+                      <span className="text-xs px-2 py-1 rounded inline-block bg-blue-100 text-blue-900 border border-blue-300 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-700/50">
+                        built-in
+                      </span>
                     </div>
                     <div className="text-xs text-muted-foreground truncate flex items-center gap-1 mt-1">
                       <ExternalLink size={10} />
@@ -666,7 +671,8 @@ export const SettingsPage: React.FC = () => {
                     )}
                   </div>
                 </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Custom Endpoints Section */}
@@ -900,9 +906,11 @@ export const SettingsPage: React.FC = () => {
             <div className="flex items-center gap-2 text-xs">
               <span className="text-muted-foreground">Currently configured via:</span>
               <span className={`px-2 py-0.5 rounded ${
-                configStatus.storage.source === 'file' ? 'bg-green-50 text-green-700 border border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800' :
-                configStatus.storage.source === 'environment' ? 'bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800' :
-                'bg-gray-50 text-gray-700 border border-gray-200 dark:bg-gray-800/30 dark:text-gray-400 dark:border-gray-700'
+                configStatus.storage.source === 'file' 
+                  ? 'bg-green-100 text-green-900 border border-green-300 dark:bg-green-950/50 dark:text-green-300 dark:border-green-700/50'
+                  : configStatus.storage.source === 'environment' 
+                  ? 'bg-blue-100 text-blue-900 border border-blue-300 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-700/50'
+                  : 'bg-gray-100 text-gray-900 border border-gray-300 dark:bg-gray-800/50 dark:text-gray-400 dark:border-gray-700/50'
               }`}>
                 {configStatus.storage.source === 'file' ? 'Server file (agent-health.yaml)' :
                  configStatus.storage.source === 'environment' ? 'Environment variables' :
@@ -1151,9 +1159,11 @@ export const SettingsPage: React.FC = () => {
             <div className="flex items-center gap-2 text-xs">
               <span className="text-muted-foreground">Currently configured via:</span>
               <span className={`px-2 py-0.5 rounded ${
-                configStatus.observability.source === 'file' ? 'bg-green-50 text-green-700 border border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800' :
-                configStatus.observability.source === 'environment' ? 'bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800' :
-                'bg-gray-50 text-gray-700 border border-gray-200 dark:bg-gray-800/30 dark:text-gray-400 dark:border-gray-700'
+                configStatus.observability.source === 'file' 
+                  ? 'bg-green-100 text-green-900 border border-green-300 dark:bg-green-950/50 dark:text-green-300 dark:border-green-700/50'
+                  : configStatus.observability.source === 'environment' 
+                  ? 'bg-blue-100 text-blue-900 border border-blue-300 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-700/50'
+                  : 'bg-gray-100 text-gray-900 border border-gray-300 dark:bg-gray-800/50 dark:text-gray-400 dark:border-gray-700/50'
               }`}>
                 {configStatus.observability.source === 'file' ? 'Server file (agent-health.yaml)' :
                  configStatus.observability.source === 'environment' ? 'Environment variables' :

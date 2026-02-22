@@ -293,17 +293,17 @@ export const QuickRunModal: React.FC<QuickRunModalProps> = ({
                   {report && (
                     <div className="flex items-center gap-4">
                       {report.metricsStatus === 'pending' ? (
-                        <Badge className="bg-amber-500/20 text-amber-400 text-sm px-3 py-1">
+                        <Badge className="bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-500/20 dark:text-amber-400 dark:border-amber-500/30 text-sm px-3 py-1">
                           <Clock size={14} className="mr-1" />
                           PENDING
                         </Badge>
                       ) : report.passFailStatus === 'passed' ? (
-                        <Badge className="bg-opensearch-blue/20 text-opensearch-blue text-sm px-3 py-1">
+                        <Badge className="bg-green-100 text-green-700 border-green-300 dark:bg-green-500/20 dark:text-green-400 dark:border-green-500/30 text-sm px-3 py-1">
                           <CheckCircle2 size={14} className="mr-1" />
                           PASSED
                         </Badge>
                       ) : (
-                        <Badge className="bg-red-500/20 text-red-400 text-sm px-3 py-1">
+                        <Badge className="bg-red-100 text-red-700 border-red-300 dark:bg-red-500/20 dark:text-red-400 dark:border-red-500/30 text-sm px-3 py-1">
                           <XCircle size={14} className="mr-1" />
                           FAILED
                         </Badge>

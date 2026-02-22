@@ -648,7 +648,7 @@ export const BenchmarkRunsPage: React.FC = () => {
                             <div className="flex items-center gap-2">
                               <p className="text-sm font-medium truncate">{tc.name}</p>
                               {isAddedInThisVersion && (
-                                <Badge className="text-xs bg-green-500/20 text-green-400 border-green-500/30">
+                                <Badge className="text-xs bg-green-100 text-green-700 border-green-300 dark:bg-green-500/20 dark:text-green-400 dark:border-green-500/30">
                                   new
                                 </Badge>
                               )}
@@ -817,19 +817,19 @@ export const BenchmarkRunsPage: React.FC = () => {
                               <div className="flex items-center gap-2 mb-1">
                                 <h3 className="font-semibold">{run.name}</h3>
                                 {getEffectiveRunStatus(run) === 'running' && (
-                                  <Badge className="text-xs bg-blue-500/20 text-blue-400 border-blue-500/30 animate-pulse">
+                                  <Badge className="text-xs bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-500/20 dark:text-blue-400 dark:border-blue-500/30 animate-pulse">
                                     <Loader2 size={12} className="mr-1 animate-spin" />
                                     Running
                                   </Badge>
                                 )}
                                 {getEffectiveRunStatus(run) === 'cancelled' && (
-                                  <Badge className="text-xs bg-gray-500/20 text-gray-400 border-gray-500/30">
+                                  <Badge className="text-xs bg-gray-100 text-gray-700 border-gray-300 dark:bg-gray-500/20 dark:text-gray-400 dark:border-gray-500/30">
                                     <XCircle size={12} className="mr-1" />
                                     Cancelled
                                   </Badge>
                                 )}
                                 {isLatestRun && (
-                                  <Badge variant="outline" className="text-xs bg-blue-500/10 text-blue-400 border-blue-500/30">
+                                  <Badge variant="outline" className="text-xs bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30">
                                     Latest
                                   </Badge>
                                 )}
@@ -839,7 +839,7 @@ export const BenchmarkRunsPage: React.FC = () => {
                                     variant="outline"
                                     className={`text-xs ${
                                       run.benchmarkVersion < benchmark.currentVersion
-                                        ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30'
+                                        ? 'bg-yellow-100 text-yellow-700 border-yellow-300 dark:bg-yellow-500/10 dark:text-yellow-400 dark:border-yellow-500/30'
                                         : 'text-muted-foreground'
                                     }`}
                                     title={run.benchmarkVersion < (benchmark.currentVersion || 1)
