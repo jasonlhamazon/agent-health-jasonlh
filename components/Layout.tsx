@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, createContext, useContext } from "react";
 import {
   LayoutDashboard,
   Settings,
@@ -42,6 +42,22 @@ import { Input } from "@/components/ui/input";
 interface LayoutProps {
   children: React.ReactNode;
 }
+
+// Create context for sidebar collapse control
+interface SidebarCollapseContextType {
+  isCollapsed: boolean;
+  setIsCollapsed: (collapsed: boolean) => void;
+}
+
+const SidebarCollapseContext = createContext<SidebarCollapseContextType | null>(null);
+
+export const useSidebarCollapse = () => {
+  const context = useContext(SidebarCollapseContext);
+  if (!context) {
+    throw new Error('useSidebarCollapse must be used within Layout');
+  }
+  return context;
+};
 
 const navItems = [
   { to: "/", icon: LayoutDashboard, label: "Overview", testId: "nav-overview" },
@@ -91,7 +107,8 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const OpenSearchLogo = isDarkMode ? OpenSearchLogoDark : OpenSearchLogoLight;
 
   return (
-    <SidebarProvider className="h-screen overflow-hidden">
+    <SidebarCollapseContext.Provider value={{ isCollapsed, setIsCollapsed }}>
+      <SidebarProvider className="h-screen overflow-hidden">
       <Sidebar 
         collapsible="none" 
         className="h-screen flex-shrink-0 transition-all duration-300"
@@ -316,5 +333,6 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
       <SidebarInset className="overflow-y-auto">{children}</SidebarInset>
     </SidebarProvider>
+    </SidebarCollapseContext.Provider>
   );
 };

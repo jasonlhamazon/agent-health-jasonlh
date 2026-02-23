@@ -716,6 +716,8 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
         initialViewMode={viewMode}
         onViewModeChange={setViewMode}
         spanCount={trace.spanCount}
+        expandedSpans={expandedSpans}
+        onToggleExpand={handleToggleExpand}
       />
     </div>
   );

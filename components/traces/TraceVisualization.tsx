@@ -210,11 +210,12 @@ const TraceVisualization: React.FC<TraceVisualizationProps> = ({
         ) : viewMode === 'tree' || viewMode === 'gantt' ? (
           /* Gantt chart timeline view - shown for 'tree' (Timeline button) and 'gantt' modes */
           showSpanDetailsPanel ? (
-            <div className="flex h-full w-full min-w-0 overflow-hidden">
+            <div className="flex h-full timeline-container relative">
+              {/* Timeline chart on left */}
               <div 
-                className="overflow-auto p-4 min-w-0"
+                className="overflow-auto p-4 border-r"
                 style={{ 
-                  width: detailsCollapsed ? '100%' : '60%'
+                  width: detailsCollapsed ? '100%' : `${timelineWidth}%`
                 }}
               >
                 <TraceTimelineChart
@@ -226,8 +227,27 @@ const TraceVisualization: React.FC<TraceVisualizationProps> = ({
                   onToggleExpand={handleToggleExpand}
                 />
               </div>
+              
+              {/* Resizable divider */}
+              {!detailsCollapsed && selectedSpan && (
+                <div
+                  onMouseDown={handleMouseDown}
+                  className="absolute top-0 bottom-0 w-1 cursor-ew-resize hover:bg-opensearch-blue/50 active:bg-opensearch-blue transition-colors z-10"
+                  style={{
+                    left: `${timelineWidth}%`,
+                    background: isResizing ? 'hsl(var(--primary))' : 'transparent',
+                  }}
+                >
+                  <div className="absolute left-0 top-0 bottom-0 w-4 -translate-x-1.5" />
+                </div>
+              )}
+              
+              {/* Details panel on right */}
               {!detailsCollapsed && selectedSpan ? (
-                <div className="w-[400px] border-l shrink-0 overflow-auto">
+                <div 
+                  className="overflow-auto relative"
+                  style={{ width: `${100 - timelineWidth}%` }}
+                >
                   <SpanDetailsPanel
                     span={selectedSpan}
                     onClose={() => setSelectedSpan(null)}
