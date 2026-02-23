@@ -30,10 +30,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import {
-  Sheet,
-  SheetContent,
-} from '@/components/ui/sheet';
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { Span } from '@/types';
 import { DEFAULT_CONFIG } from '@/lib/constants';
 import {
@@ -43,6 +40,7 @@ import {
 import { formatDuration } from '@/services/traces/utils';
 import { TraceFlyoutContent } from './TraceFlyoutContent';
 import MetricsOverview from './MetricsOverview';
+import { useSidebarCollapse } from '../Layout';
 
 // ==================== Types ====================
 
@@ -116,6 +114,9 @@ const TraceRow: React.FC<TraceRowProps> = ({ trace, onSelect, isSelected }) => {
 // ==================== Main Component ====================
 
 export const AgentTracesPage: React.FC = () => {
+  // Sidebar collapse control
+  const { isCollapsed, setIsCollapsed } = useSidebarCollapse();
+  
   // Filter state
   const [selectedAgent, setSelectedAgent] = useState<string>('all');
   const [textSearch, setTextSearch] = useState('');
@@ -136,15 +137,6 @@ export const AgentTracesPage: React.FC = () => {
   // Flyout state
   const [flyoutOpen, setFlyoutOpen] = useState(false);
   const [selectedTrace, setSelectedTrace] = useState<TraceTableRow | null>(null);
-  
-  // Flyout resize state - default to 65% of viewport width
-  const [flyoutWidth, setFlyoutWidth] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return Math.floor(window.innerWidth * 0.65);
-    }
-    return 1300; // fallback for SSR
-  });
-  const [isResizing, setIsResizing] = useState(false);
 
   // Scroll state for hiding container header
   const [isScrolled, setIsScrolled] = useState(false);
@@ -291,8 +283,14 @@ export const AgentTracesPage: React.FC = () => {
 
   // Handle trace selection
   const handleSelectTrace = (trace: TraceTableRow) => {
+    // If flyout is already open, just update the selected trace (no close/reopen flash)
+    // If flyout is closed, open it with the selected trace and collapse the sidebar
     setSelectedTrace(trace);
-    setFlyoutOpen(true);
+    if (!flyoutOpen) {
+      setFlyoutOpen(true);
+      // Collapse sidebar when opening flyout for more screen space
+      setIsCollapsed(true);
+    }
   };
 
   // Close flyout
@@ -300,42 +298,6 @@ export const AgentTracesPage: React.FC = () => {
     setFlyoutOpen(false);
     setSelectedTrace(null);
   };
-
-  // Resize handlers for flyout
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizing(true);
-  }, []);
-
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing) return;
-      
-      const newWidth = window.innerWidth - e.clientX;
-      // Constrain width between 400px and 90% of window width
-      const minWidth = 400;
-      const maxWidth = window.innerWidth * 0.9;
-      setFlyoutWidth(Math.max(minWidth, Math.min(newWidth, maxWidth)));
-    };
-
-    const handleMouseUp = () => {
-      setIsResizing(false);
-    };
-
-    if (isResizing) {
-      document.addEventListener('mousemove', handleMouseMove);
-      document.addEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = 'ew-resize';
-      document.body.style.userSelect = 'none';
-    }
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-    };
-  }, [isResizing]);
 
   // Calculate latency distribution for histogram
   const latencyDistribution = useMemo(() => {
@@ -544,8 +506,8 @@ export const AgentTracesPage: React.FC = () => {
       {/* Error State */}
       {error && (
         <div className="px-6 pt-4">
-          <Card className="bg-red-500/10 border-red-500/30">
-            <CardContent className="p-4 text-sm text-red-400">
+          <Card className="bg-red-50 dark:bg-red-500/10 border-red-300 dark:border-red-500/30">
+            <CardContent className="p-4 text-sm text-red-700 dark:text-red-400">
               {error}
             </CardContent>
           </Card>
@@ -641,32 +603,35 @@ export const AgentTracesPage: React.FC = () => {
         </div>
       </Card>
 
-      {/* Trace Detail Flyout */}
-      <Sheet open={flyoutOpen} onOpenChange={setFlyoutOpen}>
-        <SheetContent 
-          side="right" 
-          className="p-0 overflow-hidden"
-          style={{ width: `${flyoutWidth}px`, maxWidth: `${flyoutWidth}px` }}
-        >
-          {/* Resize Handle */}
-          <div
-            onMouseDown={handleMouseDown}
-            className="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize hover:bg-opensearch-blue/50 active:bg-opensearch-blue transition-colors z-50"
-            style={{
-              background: isResizing ? 'hsl(var(--primary))' : 'transparent',
-            }}
-          >
-            <div className="absolute left-0 top-0 bottom-0 w-4 -translate-x-1.5" />
-          </div>
-          
-          {selectedTrace && (
-            <TraceFlyoutContent
-              trace={selectedTrace}
-              onClose={handleCloseFlyout}
+      {/* Trace Detail Flyout - Resizable Panel */}
+      {flyoutOpen && selectedTrace && (
+        <div className="fixed inset-0 z-50 pointer-events-none">
+          <ResizablePanelGroup direction="horizontal" className="h-full pointer-events-none">
+            {/* Left invisible panel - allows content below to be interactive */}
+            <ResizablePanel 
+              defaultSize={40}
+              minSize={10}
+              maxSize={70}
+              className="pointer-events-none"
             />
-          )}
-        </SheetContent>
-      </Sheet>
+            
+            <ResizableHandle withHandle className="pointer-events-auto" />
+            
+            {/* Right panel - Flyout content */}
+            <ResizablePanel 
+              defaultSize={60}
+              minSize={30}
+              maxSize={90}
+              className="bg-background border-l shadow-2xl pointer-events-auto"
+            >
+              <TraceFlyoutContent
+                trace={selectedTrace}
+                onClose={handleCloseFlyout}
+              />
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </div>
+      )}
     </div>
   );
 };
