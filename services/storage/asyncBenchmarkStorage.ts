@@ -54,12 +54,13 @@ function toBenchmark(stored: StorageBenchmark): Benchmark {
  */
 function toBenchmarkRun(stored: StorageBenchmarkRunConfig): BenchmarkRun {
   // Convert results with proper typing for status field
-  const results: Record<string, { reportId: string; status: RunResultStatus }> = {};
+  const results: Record<string, { reportId: string; status: RunResultStatus; error?: string }> = {};
   if (stored.results) {
     Object.entries(stored.results).forEach(([key, value]) => {
       results[key] = {
         reportId: value.reportId,
         status: value.status as RunResultStatus,
+        ...(value.error && { error: value.error }),
       };
     });
   }
@@ -76,6 +77,7 @@ function toBenchmarkRun(stored: StorageBenchmarkRunConfig): BenchmarkRun {
     benchmarkVersion: (stored as any).benchmarkVersion ?? 1,
     testCaseSnapshots: (stored as any).testCaseSnapshots ?? [],
     status: stored.status as BenchmarkRunStatus | undefined,
+    error: stored.error,
     stats: stored.stats as RunStats | undefined,
     results,
   };
@@ -408,6 +410,54 @@ class AsyncBenchmarkStorage {
       return toBenchmark(result);
     } catch (error) {
       console.error('[asyncBenchmarkStorage] update failed:', error);
+      return null;
+    }
+  }
+
+  // ==================== Stats Refresh Operations ====================
+
+  /**
+   * Manually refresh stats for all runs in a benchmark.
+   * Useful for fixing stale stats or after manual data corrections.
+   */
+  async refreshAllStats(benchmarkId: string): Promise<{ refreshed: number } | null> {
+    try {
+      const response = await fetch(`/api/storage/benchmarks/${benchmarkId}/refresh-all-stats`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('[asyncBenchmarkStorage] refreshAllStats failed:', error);
+        return null;
+      }
+
+      return await response.json();
+    } catch (error) {
+      console.error('[asyncBenchmarkStorage] refreshAllStats failed:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Manually refresh stats for a single run in a benchmark.
+   * Useful for fixing stale stats for a specific run.
+   */
+  async refreshRunStats(benchmarkId: string, runId: string): Promise<{ refreshed: boolean; stats: RunStats } | null> {
+    try {
+      const response = await fetch(`/api/storage/benchmarks/${benchmarkId}/runs/${runId}/refresh-stats`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        console.error('[asyncBenchmarkStorage] refreshRunStats failed:', error);
+        return null;
+      }
+
+      return response.json();
+    } catch (error) {
+      console.error('[asyncBenchmarkStorage] refreshRunStats failed:', error);
       return null;
     }
   }

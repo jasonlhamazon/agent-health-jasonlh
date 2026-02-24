@@ -13,7 +13,6 @@ build
 judge.log
 
 # Configuration files (may contain credentials)
-agent-health.yaml
 agent-health.config.ts
 agent-health.config.js
 agent-health.config.mjs
@@ -34,3 +33,19 @@ agent-health.config.json
 /playwright-report/
 /playwright/.cache/
 /test-results/
+
+/plans
+
+tokens.json
+
+# Local auth tokens
+.auth/
+
+# Claude Code working files
+.claude/
+
+# Development artifacts
+*.local.json
+
+# File-based storage backend (runtime data, not source)
+agent-health-data/

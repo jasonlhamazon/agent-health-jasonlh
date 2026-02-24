@@ -9,7 +9,7 @@
  */
 
 import { AGUIEvent, AGUIEventType } from '@/types/agui';
-import { debug } from '@/lib/debug';
+import { debug, isDebugEnabled } from '@/lib/debug';
 
 export interface SSEClientOptions {
   url: string;
@@ -49,10 +49,12 @@ export class SSEClient {
 
     debug('SSE', 'Connecting to', url);
     debug('SSE', 'Method:', method);
-    debug('SSE', 'Payload:', JSON.stringify(body, null, 2).substring(0, 500));
+    debug('SSE', 'Headers:', headers);
+    debug('SSE', 'Payload:', body ? JSON.stringify(body, null, 2).substring(0, 500) : 'none');
+    debug('SSE', 'Timeout:', idleTimeoutMs, 'ms');
 
     try {
-      const response = await fetch(url, {
+      const requestConfig = {
         method,
         headers: {
           'Content-Type': 'application/json',
@@ -61,23 +63,37 @@ export class SSEClient {
         },
         body: body ? JSON.stringify(body) : undefined,
         signal: this.abortController.signal,
-      });
+      };
+      debug('SSE', 'Request config:', JSON.stringify(requestConfig, null, 2).substring(0, 500));
+
+      const response = await fetch(url, requestConfig);
+
+      debug('SSE', 'Response received:', response.status, response.statusText);
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        // Try to get error response body for debugging
+        let errorBody = '';
+        try {
+          errorBody = await response.text();
+          debug('SSE', 'Error response body:', errorBody.substring(0, 500));
+        } catch {
+          debug('SSE', 'Could not read error response body');
+        }
+        throw new Error(`HTTP ${response.status}: ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`);
       }
 
       if (!response.body) {
         throw new Error('Response body is null');
       }
 
-      debug('SSE', 'Connected, streaming events...');
+      console.info('[SSE] Connected to agent endpoint, streaming events...');
       debug('SSE', 'Response status:', response.status);
       debug('SSE', 'Content-Type:', response.headers.get('content-type'));
 
       // Process the stream with idle timeout support
       const completionReason = await this.processStream(response.body, onEvent, completeOnRunEnd, idleTimeoutMs);
 
+      console.info(`[SSE] Stream completed: ${completionReason}`);
       debug('SSE', `Stream completed: ${completionReason}`);
       onComplete?.();
     } catch (error) {
@@ -88,9 +104,41 @@ export class SSEClient {
           onComplete?.();
         } else {
           console.error('[SSE] Stream error:', error.message);
+          console.error('[SSE] Debug mode is:', isDebugEnabled() ? 'ENABLED ✅' : 'DISABLED ❌');
+
+          // Detailed debug logging with diagnostics
+          const errorDetails = {
+            name: error.name,
+            message: error.message,
+            stack: error.stack,
+            cause: (error as any).cause,
+            url,
+            method,
+            headers: headers,
+          };
+          debug('SSE', 'Error details:', errorDetails);
+
+          // Provide diagnostic hints based on error type
+          if (error.message.includes('fetch failed')) {
+            debug('SSE', '💡 Diagnostic: "fetch failed" typically means:');
+            debug('SSE', '   - Connection refused (endpoint not running)');
+            debug('SSE', '   - DNS resolution failed (invalid hostname)');
+            debug('SSE', '   - Network unreachable (firewall/VPN issues)');
+            debug('SSE', '   - SSL/TLS certificate issues (self-signed cert)');
+            debug('SSE', `   Check if ${url} is accessible`);
+          } else if (error.message.includes('timeout')) {
+            debug('SSE', '💡 Diagnostic: Request timed out - endpoint may be slow or unresponsive');
+          } else if (error.message.includes('ENOTFOUND')) {
+            debug('SSE', '💡 Diagnostic: DNS lookup failed - hostname not found');
+          } else if (error.message.includes('ECONNREFUSED')) {
+            debug('SSE', '💡 Diagnostic: Connection refused - service not listening on this port');
+          }
+
           onError?.(error);
         }
       } else {
+        console.error('[SSE] Unknown error:', error);
+        debug('SSE', 'Unknown error details:', error);
         onError?.(new Error('Unknown error occurred'));
       }
     }
@@ -156,8 +204,14 @@ export class SSEClient {
 
                 try {
                   const event = JSON.parse(data) as AGUIEvent;
-                  debug('SSE', 'Parsed:', event.type);
+                  debug('SSE', 'Parsed event:', event.type);
                   eventCount++;
+
+                  // Log progress milestone every 10 events
+                  if (eventCount % 10 === 0) {
+                    console.info(`[SSE] Processed ${eventCount} events...`);
+                  }
+
                   onEvent(event);
 
                   // Check for run-ending events when completeOnRunEnd is enabled

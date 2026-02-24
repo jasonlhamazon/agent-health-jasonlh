@@ -12,10 +12,10 @@ export type Difficulty = 'Easy' | 'Medium' | 'Hard';
 export type DateFormatVariant = 'date' | 'datetime' | 'detailed';
 
 // Judge provider determines which backend service handles evaluation
-export type JudgeProvider = 'demo' | 'bedrock' | 'ollama' | 'openai';
+export type JudgeProvider = 'demo' | 'bedrock' | 'litellm';
 
 // Connector protocol for agent communication
-export type ConnectorProtocol = 'agui-streaming' | 'rest' | 'subprocess' | 'claude-code' | 'mock';
+export type ConnectorProtocol = 'agui-streaming' | 'rest' | 'litellm' | 'subprocess' | 'claude-code' | 'mock';
 
 export interface ModelConfig {
   model_id: string;
@@ -45,11 +45,26 @@ export interface AgentConfig {
   enabled?: boolean;
   models: string[]; // Keys referring to ModelConfig
   headers?: Record<string, string>; // Custom headers for agent endpoint (e.g., AWS credentials)
+  auth?: ConnectorAuthConfig; // Explicit auth config (preferred over headers inference)
   useTraces?: boolean; // When true, fetch traces instead of logs for evaluation
   connectorType?: ConnectorProtocol; // Connector protocol (defaults to 'agui-streaming')
   connectorConfig?: Record<string, any>; // Connector-specific configuration
   hooks?: AgentHooks; // Lifecycle hooks for custom setup/transform logic
   isCustom?: boolean; // True for user-added custom endpoints (not from config file)
+}
+
+/**
+ * Authentication config for agents (serializable subset of ConnectorAuth).
+ * Used in AgentConfig for config files — avoids importing connector types.
+ */
+export interface ConnectorAuthConfig {
+  type: 'none' | 'basic' | 'bearer' | 'api-key' | 'aws-sigv4';
+  username?: string;
+  password?: string;
+  token?: string;
+  awsRegion?: string;
+  awsService?: string;
+  headers?: Record<string, string>;
 }
 
 export interface AppConfig {
@@ -240,6 +255,7 @@ export interface TestCase {
   isPromoted: boolean;              // Available for experiments
   createdAt: string;
   updatedAt: string;
+  lastRunAt?: string;               // Timestamp of the most recent evaluation run
 
   // Current version content (convenience accessors - mirrors latest version)
   initialPrompt: string;
@@ -329,12 +345,15 @@ export interface TraceQueryParams {
   size?: number;
   serviceName?: string;
   textSearch?: string;
+  cursor?: string; // For pagination
 }
 
 export interface TraceSearchResult {
   spans: Span[];
   total: number;
   warning?: string;
+  nextCursor?: string | null;
+  hasMore?: boolean;
 }
 
 /**
@@ -575,6 +594,7 @@ export interface BenchmarkRun {
   results: Record<string, {        // testCaseId → result
     reportId: string;              // References EvaluationReport.id
     status: RunResultStatus;
+    error?: string;                // Error message if status is 'failed'
   }>;
 
   // Denormalized stats (computed from reports, stored for fast list display)
@@ -667,6 +687,8 @@ export interface TestCaseRunResult {
   trajectoryAlignment?: number;
   latencyScore?: number;
   testCaseVersion?: string;
+  /** Error message if status is 'failed' */
+  error?: string;
 }
 
 // Per-test-case comparison row
@@ -842,6 +864,8 @@ export interface DataSourceConfig {
 
 /**
  * Adapter type for data sources
- * 'opensearch' is the default, 'memory' is for testing/demo
+ * 'file' is the default (JSON files in agent-health-data/)
+ * 'opensearch' when storage cluster is configured
+ * 'memory' is for testing/demo
  */
-export type DataSourceAdapterType = 'opensearch' | 'memory';
+export type DataSourceAdapterType = 'file' | 'opensearch' | 'memory';

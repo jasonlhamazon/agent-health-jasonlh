@@ -165,7 +165,7 @@ export const Dashboard: React.FC = () => {
 
   // Filter state
   const [filters, setFilters] = useState<DashboardFilter>({});
-  const [timeRange, setTimeRange] = useState<TimeRange>('7d');
+  const [timeRange, setTimeRange] = useState<TimeRange>('all');
   const [selectedMetric, setSelectedMetric] = useState<TrendMetric>('passRate');
 
   useEffect(() => {
@@ -176,8 +176,28 @@ export const Dashboard: React.FC = () => {
         const allBenchmarks = await asyncExperimentStorage.getAll();
         setBenchmarks(allBenchmarks);
 
-        // Load all reports
-        const allReports = await asyncRunStorage.getAllReports({ sortBy: 'timestamp', order: 'desc' });
+        // Load recent reports (limited to prevent performance issues)
+        // Only fetch fields needed by Dashboard to reduce payload size (~70% reduction)
+        const allReports = await asyncRunStorage.getAllReports({
+          sortBy: 'timestamp',
+          order: 'desc',
+          limit: 30,  // Limit to recent 30 to avoid overwhelming metrics API
+          fields: [
+            'id',
+            'experimentId',
+            'experimentRunId',
+            'runId',
+            'testCaseId',
+            'agentId',
+            'modelId',
+            'status',
+            'passFailStatus',
+            'createdAt',
+            'timestamp',
+            'metrics'
+            // Exclude large fields: trajectory, logs, rawEvents, improvementStrategies
+          ]
+        });
         setReports(allReports);
 
         // Fetch metrics for all reports with runIds

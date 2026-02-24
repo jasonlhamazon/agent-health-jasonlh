@@ -12,11 +12,11 @@
  */
 
 import { Router, Request, Response } from 'express';
-import { isStorageAvailable, requireStorageClient } from '../middleware/storageClient.js';
+import { getStorageModule } from '../adapters/index.js';
 import { SAMPLE_TEST_CASES } from '../../cli/demo/sampleTestCases.js';
 import { runSingleUseCase } from '../../services/benchmarkRunner.js';
 import { loadConfigSync } from '../../lib/config/index.js';
-import { getCustomAgents } from '../services/customAgentStore.js';
+import { getCustomAgents } from '@/server/services/customAgentStore';
 import { debug } from '@/lib/debug';
 import type { BenchmarkRun, TestCase } from '../../types/index.js';
 
@@ -143,28 +143,22 @@ router.post('/api/evaluate', async (req: Request, res: Response) => {
     }
 
     // Check storage if not found in samples
-    if (!testCase && isStorageAvailable(req)) {
+    if (!testCase) {
       try {
-        const client = requireStorageClient(req);
-        const result = await client.search({
-          index: 'evals_test_cases',
-          body: {
-            size: 1,
-            sort: [{ version: { order: 'desc' } }],
-            query: {
-              bool: {
-                should: [
-                  { term: { id: testCaseId } },
-                  { match_phrase: { name: testCaseId } },
-                ],
-                minimum_should_match: 1,
-              },
-            },
-          },
-        });
-        const source = result.body.hits?.hits?.[0]?._source;
-        if (source) {
-          testCase = source as TestCase;
+        const storage = getStorageModule();
+        // Try by ID first, then by name search
+        const byId = await storage.testCases.getById(testCaseId);
+        if (byId) {
+          testCase = byId;
+        } else {
+          // Search by name as fallback
+          const searchResult = await storage.testCases.search(
+            { textSearch: testCaseId },
+            { size: 1 }
+          );
+          if (searchResult.items.length > 0) {
+            testCase = searchResult.items[0];
+          }
         }
       } catch (e: any) {
         console.warn('[EvaluationAPI] Storage query failed:', e.message);
@@ -189,15 +183,7 @@ router.post('/api/evaluate', async (req: Request, res: Response) => {
     results: {},
   };
 
-  // Check if storage is available for saving results
-  if (!isStorageAvailable(req)) {
-    return res.status(400).json({
-      error: 'OpenSearch storage not configured. Cannot run evaluations without storage.',
-      hint: 'Set OPENSEARCH_STORAGE_* environment variables to enable storage.',
-    });
-  }
-
-  const client = requireStorageClient(req);
+  const storage = getStorageModule();
 
   try {
     // Set up SSE streaming for progress updates
@@ -214,7 +200,7 @@ router.post('/api/evaluate', async (req: Request, res: Response) => {
     const reportId = await runSingleUseCase(
       runConfig,
       testCase,
-      client,
+      storage,
       (step) => {
         stepCount++;
         // Send full step content for UI rendering
@@ -234,17 +220,12 @@ router.post('/api/evaluate', async (req: Request, res: Response) => {
       }
     );
 
-    // Fetch the completed report
-    const reportResult = await client.get({
-      index: 'evals_runs',
-      id: reportId,
-    });
+    // Fetch the completed report via adapter
+    const report = await storage.runs.getById(reportId);
 
-    if (!reportResult.body.found) {
+    if (!report) {
       throw new Error('Report not found after save');
     }
-
-    const report = reportResult.body._source;
 
     // Send completed event with reportId for navigation
     res.write(`data: ${JSON.stringify({
