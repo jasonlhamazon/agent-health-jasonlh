@@ -1,0 +1,51 @@
+name: Links Checker
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - '**/*.md'
+      - '.github/workflows/links-checker.yml'
+  schedule:
+    # Run weekly on Monday at midnight
+    - cron: '0 0 * * 1'
+
+jobs:
+  link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check links
+        uses: lycheeverse/lychee-action@v2.0.2
+        with:
+          fail: true
+          output: ./lychee-report.md
+          args: |
+            --verbose
+            --no-progress
+            --accept 200,204,301,302,403,429
+            --exclude-loopback
+            --exclude-private
+            --exclude 'localhost'
+            --exclude '127.0.0.1'
+            --exclude '.*xenproject\.org.*'
+            --exclude-path 'node_modules'
+            --exclude-path 'coverage'
+            --exclude-path 'dist'
+            --retry-wait-time 5
+            --max-retries 3
+            --timeout 30
+            '**/*.md'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload link check report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lychee-report
+          path: ./lychee-report.md

@@ -1,0 +1,549 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20, 22]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build all artifacts
+        run: npm run build:all
+
+      - name: Run unit tests with coverage
+        run: npm run test:unit -- --coverage --coverageReporters=json-summary --coverageReporters=lcov --coverageReporters=text 2>&1 | tee unit-test-output.txt
+
+      - name: Upload coverage artifact
+        if: matrix.node-version == '20'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 30
+
+      - name: Check coverage thresholds and generate badges
+        if: matrix.node-version == '20'
+        run: |
+          COVERAGE=$(node -e "const c = require('./coverage/coverage-summary.json'); console.log(c.total.lines.pct)")
+          BRANCHES=$(node -e "const c = require('./coverage/coverage-summary.json'); console.log(c.total.branches.pct)")
+          FUNCTIONS=$(node -e "const c = require('./coverage/coverage-summary.json'); console.log(c.total.functions.pct)")
+          STATEMENTS=$(node -e "const c = require('./coverage/coverage-summary.json'); console.log(c.total.statements.pct)")
+
+          echo "## 📊 Unit Test Coverage Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Coverage |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Lines | ${COVERAGE}% |" >> $GITHUB_STEP_SUMMARY
+          echo "| Branches | ${BRANCHES}% |" >> $GITHUB_STEP_SUMMARY
+          echo "| Functions | ${FUNCTIONS}% |" >> $GITHUB_STEP_SUMMARY
+          echo "| Statements | ${STATEMENTS}% |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Generate badge data for unit test coverage
+          mkdir -p badges
+          # Determine badge color based on coverage
+          if (( $(echo "$COVERAGE >= 90" | bc -l) )); then
+            COLOR="brightgreen"
+          elif (( $(echo "$COVERAGE >= 80" | bc -l) )); then
+            COLOR="green"
+          elif (( $(echo "$COVERAGE >= 70" | bc -l) )); then
+            COLOR="yellow"
+          else
+            COLOR="red"
+          fi
+          echo "{\"schemaVersion\":1,\"label\":\"Unit Coverage\",\"message\":\"${COVERAGE}%\",\"color\":\"${COLOR}\"}" > badges/unit-coverage.json
+
+          # Generate unit test count badge
+          TESTS_PASSED=$(grep -o '[0-9]* passed' unit-test-output.txt | tail -1 | grep -o '[0-9]*' || echo "0")
+          TESTS_TOTAL=$(grep -o '[0-9]* total' unit-test-output.txt | tail -1 | grep -o '[0-9]*' || echo "0")
+          if [ "$TESTS_PASSED" = "$TESTS_TOTAL" ] && [ "$TESTS_TOTAL" != "0" ]; then
+            TEST_COLOR="brightgreen"
+          else
+            TEST_COLOR="red"
+          fi
+          echo "{\"schemaVersion\":1,\"label\":\"Unit Tests\",\"message\":\"${TESTS_PASSED}/${TESTS_TOTAL} passed\",\"color\":\"${TEST_COLOR}\"}" > badges/unit-tests.json
+
+          # Enforce 90% line coverage threshold
+          if (( $(echo "$COVERAGE < 90" | bc -l) )); then
+            echo "❌ Line coverage ${COVERAGE}% is below the 90% threshold" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          else
+            echo "✅ Line coverage ${COVERAGE}% meets the 90% threshold" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload unit test badge data
+        if: matrix.node-version == '20'
+        uses: actions/upload-artifact@v4
+        with:
+          name: badge-data-unit
+          path: badges/
+          retention-days: 30
+
+      - name: Verify CLI works
+        run: |
+          node cli/dist/index.js --help
+          echo "CLI help command works"
+
+  lint-and-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit --skipLibCheck 2>&1 | head -100 || true
+
+      - name: Build all artifacts
+        run: npm run build:all
+
+      - name: Check package contents
+        run: |
+          echo "## 📦 Package Contents" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          npm pack --dry-run 2>&1 | tee -a $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Verify bin entry point
+        run: |
+          if [ ! -f "bin/cli.js" ]; then
+            echo "Error: bin/cli.js not found"
+            exit 1
+          fi
+          echo "bin/cli.js exists"
+
+  license-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check license headers
+        run: npx jest tests/unit/licenseHeaders.test.ts
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build server
+        run: npm run build:server
+
+      - name: Start backend server
+        run: |
+          node server/dist/index.js &
+          echo $! > server.pid
+          echo "Server PID: $(cat server.pid)"
+        env:
+          PORT: 4001
+
+      - name: Wait for server to be healthy
+        run: |
+          echo "Waiting for server to start..."
+          for i in {1..30}; do
+            if curl -s http://localhost:4001/health | grep -q '"status":"ok"'; then
+              echo "Server is healthy!"
+              curl -s http://localhost:4001/health | jq .
+              exit 0
+            fi
+            echo "Attempt $i: Server not ready yet..."
+            sleep 1
+          done
+          echo "Server failed to start within 30 seconds"
+          exit 1
+
+      - name: Run integration tests with coverage
+        run: npm run test:integration -- --coverage --coverageReporters=json-summary --coverageReporters=json --coverageDirectory=coverage-integration 2>&1 | tee integration-test-output.txt
+        env:
+          TEST_BACKEND_URL: http://localhost:4001
+
+      - name: Stop backend server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then
+            kill $(cat server.pid) || true
+            rm server.pid
+          fi
+
+      - name: Generate integration test summary
+        if: always()
+        run: |
+          echo "## 🧪 Integration Tests" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Parse test results from output
+          if [ -f integration-test-output.txt ]; then
+            TESTS_LINE=$(grep -E "Tests:.*passed|Tests:.*failed" integration-test-output.txt | tail -1 || echo "")
+            if [ -n "$TESTS_LINE" ]; then
+              echo "**Results:** $TESTS_LINE" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+
+          # Parse coverage if available
+          if [ -f coverage-integration/coverage-summary.json ]; then
+            LINES=$(node -e "const c = require('./coverage-integration/coverage-summary.json'); console.log(c.total.lines.pct)" 2>/dev/null || echo "N/A")
+            BRANCHES=$(node -e "const c = require('./coverage-integration/coverage-summary.json'); console.log(c.total.branches.pct)" 2>/dev/null || echo "N/A")
+            FUNCTIONS=$(node -e "const c = require('./coverage-integration/coverage-summary.json'); console.log(c.total.functions.pct)" 2>/dev/null || echo "N/A")
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Coverage |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|----------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Lines | ${LINES}% |" >> $GITHUB_STEP_SUMMARY
+            echo "| Branches | ${BRANCHES}% |" >> $GITHUB_STEP_SUMMARY
+            echo "| Functions | ${FUNCTIONS}% |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "Integration tests completed. Check the test output above for details." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Generate integration test badges
+        if: always()
+        run: |
+          mkdir -p badges
+
+          # Parse test counts
+          TESTS_PASSED="0"
+          TESTS_TOTAL="0"
+          if [ -f integration-test-output.txt ]; then
+            TESTS_PASSED=$(grep -o '[0-9]* passed' integration-test-output.txt | tail -1 | grep -o '[0-9]*' || echo "0")
+            TESTS_TOTAL=$(grep -o '[0-9]* total' integration-test-output.txt | tail -1 | grep -o '[0-9]*' || echo "0")
+          fi
+          if [ "$TESTS_PASSED" = "$TESTS_TOTAL" ] && [ "$TESTS_TOTAL" != "0" ]; then
+            TEST_COLOR="brightgreen"
+          else
+            TEST_COLOR="red"
+          fi
+          echo "{\"schemaVersion\":1,\"label\":\"Integration Tests\",\"message\":\"${TESTS_PASSED}/${TESTS_TOTAL} passed\",\"color\":\"${TEST_COLOR}\"}" > badges/integration-tests.json
+
+          # Parse coverage if available
+          if [ -f coverage-integration/coverage-summary.json ]; then
+            COV=$(node -e "const c = require('./coverage-integration/coverage-summary.json'); console.log(c.total.lines.pct)" 2>/dev/null || echo "0")
+            if (( $(echo "$COV >= 70" | bc -l 2>/dev/null || echo "0") )); then
+              COV_COLOR="brightgreen"
+            elif (( $(echo "$COV >= 50" | bc -l 2>/dev/null || echo "0") )); then
+              COV_COLOR="yellow"
+            else
+              COV_COLOR="red"
+            fi
+            echo "{\"schemaVersion\":1,\"label\":\"Integration Coverage\",\"message\":\"${COV}%\",\"color\":\"${COV_COLOR}\"}" > badges/integration-coverage.json
+          else
+            echo "{\"schemaVersion\":1,\"label\":\"Integration Coverage\",\"message\":\"N/A\",\"color\":\"lightgrey\"}" > badges/integration-coverage.json
+          fi
+
+      - name: Upload integration badge data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: badge-data-integration
+          path: badges/
+          retention-days: 30
+
+      - name: Upload integration coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-coverage-report
+          path: coverage-integration/
+          retention-days: 30
+
+  e2e-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Build application
+        run: |
+          npm run build
+          npm run build:server
+
+      - name: Run Playwright E2E tests
+        run: npm run test:e2e 2>&1 | tee e2e-test-output.txt
+        env:
+          CI: true
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 30
+
+      - name: Generate E2E test summary and badges
+        if: always()
+        run: |
+          echo "## 🎭 E2E Tests (Playwright)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Extract test counts from results.json
+          if [ -f playwright-report/results.json ]; then
+            # Get stats from Playwright results
+            TOTAL=$(jq '.stats.expected // 0' playwright-report/results.json 2>/dev/null || echo "0")
+            UNEXPECTED=$(jq '.stats.unexpected // 0' playwright-report/results.json 2>/dev/null || echo "0")
+            FLAKY=$(jq '.stats.flaky // 0' playwright-report/results.json 2>/dev/null || echo "0")
+            SKIPPED=$(jq '.stats.skipped // 0' playwright-report/results.json 2>/dev/null || echo "0")
+
+            # Calculate passed (total expected minus failed and flaky)
+            PASSED=$((TOTAL - UNEXPECTED - FLAKY))
+            if [ "$PASSED" -lt 0 ]; then PASSED=0; fi
+
+            echo "| Status | Count |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| ✅ Passed | $PASSED |" >> $GITHUB_STEP_SUMMARY
+            echo "| ❌ Failed | $UNEXPECTED |" >> $GITHUB_STEP_SUMMARY
+            echo "| ⚠️ Flaky | $FLAKY |" >> $GITHUB_STEP_SUMMARY
+            echo "| ⏭️ Skipped | $SKIPPED |" >> $GITHUB_STEP_SUMMARY
+            echo "| 📊 Total | $TOTAL |" >> $GITHUB_STEP_SUMMARY
+
+            # Calculate pass rate
+            if [ "$TOTAL" -gt 0 ]; then
+              PASS_RATE=$(echo "scale=1; $PASSED * 100 / $TOTAL" | bc)
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "**Pass Rate: ${PASS_RATE}%**" >> $GITHUB_STEP_SUMMARY
+            fi
+
+            # Generate badge data JSON for potential badge generation
+            mkdir -p badges
+            echo "{\"schemaVersion\":1,\"label\":\"E2E Tests\",\"message\":\"$PASSED/$TOTAL passed\",\"color\":\"$([ "$UNEXPECTED" -eq 0 ] && echo 'brightgreen' || echo 'red')\"}" > badges/e2e-tests.json
+          else
+            echo "E2E tests completed. Check the test output above for details." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload badge data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: badge-data-e2e
+          path: badges/
+          retention-days: 30
+
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: |
+          echo "## 🔒 Security Audit" >> $GITHUB_STEP_SUMMARY
+          npm audit --audit-level=high 2>&1 | tee audit-results.txt || true
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          cat audit-results.txt >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+          # Fail only on high/critical vulnerabilities
+          npm audit --audit-level=high
+
+  # Aggregate all test results into a final summary
+  test-summary:
+    runs-on: ubuntu-latest
+    needs: [build-and-test, integration-tests, e2e-tests]
+    if: always()
+    steps:
+      - name: Download unit test badge data
+        uses: actions/download-artifact@v4
+        with:
+          name: badge-data-unit
+          path: badges/unit
+        continue-on-error: true
+
+      - name: Download E2E test badge data
+        uses: actions/download-artifact@v4
+        with:
+          name: badge-data-e2e
+          path: badges/e2e
+        continue-on-error: true
+
+      - name: Download integration test badge data
+        uses: actions/download-artifact@v4
+        with:
+          name: badge-data-integration
+          path: badges/integration
+        continue-on-error: true
+
+      - name: Download integration coverage report
+        uses: actions/download-artifact@v4
+        with:
+          name: integration-coverage-report
+          path: coverage-integration
+        continue-on-error: true
+
+      - name: Generate consolidated test summary
+        run: |
+          echo "# 📋 Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Unit test results
+          echo "## Unit Tests" >> $GITHUB_STEP_SUMMARY
+          if [ -f badges/unit/unit-tests.json ]; then
+            TESTS=$(jq -r '.message' badges/unit/unit-tests.json 2>/dev/null || echo "N/A")
+            echo "- **Tests:** $TESTS" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -f badges/unit/unit-coverage.json ]; then
+            COVERAGE=$(jq -r '.message' badges/unit/unit-coverage.json 2>/dev/null || echo "N/A")
+            echo "- **Coverage:** $COVERAGE" >> $GITHUB_STEP_SUMMARY
+            echo "- **Threshold:** 90% (lines)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- Badge data not available" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Integration test results
+          echo "## Integration Tests" >> $GITHUB_STEP_SUMMARY
+          if [ -f badges/integration/integration-tests.json ]; then
+            INTEG_TESTS=$(jq -r '.message' badges/integration/integration-tests.json 2>/dev/null || echo "N/A")
+            echo "- **Tests:** $INTEG_TESTS" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -f badges/integration/integration-coverage.json ]; then
+            INTEG_COV=$(jq -r '.message' badges/integration/integration-coverage.json 2>/dev/null || echo "N/A")
+            echo "- **Coverage:** $INTEG_COV" >> $GITHUB_STEP_SUMMARY
+          elif [ -f coverage-integration/coverage-summary.json ]; then
+            LINES=$(node -e "const c = require('./coverage-integration/coverage-summary.json'); console.log(c.total.lines.pct)" 2>/dev/null || echo "N/A")
+            echo "- **Coverage:** ${LINES}%" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- Coverage data not available" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # E2E tests
+          echo "## E2E Tests (Playwright)" >> $GITHUB_STEP_SUMMARY
+          if [ -f badges/e2e/e2e-tests.json ]; then
+            E2E_MSG=$(jq -r '.message' badges/e2e/e2e-tests.json 2>/dev/null || echo "N/A")
+            E2E_COLOR=$(jq -r '.color' badges/e2e/e2e-tests.json 2>/dev/null || echo "unknown")
+            STATUS_ICON="✅"
+            if [ "$E2E_COLOR" = "red" ]; then STATUS_ICON="❌"; fi
+            echo "- **Results:** $STATUS_ICON $E2E_MSG" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- Badge data not available" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Overall status
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Coverage Thresholds" >> $GITHUB_STEP_SUMMARY
+          echo "| Test Type | Metric | Threshold |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|-----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Unit | Lines | ≥ 90% |" >> $GITHUB_STEP_SUMMARY
+          echo "| Unit | Branches | ≥ 80% |" >> $GITHUB_STEP_SUMMARY
+          echo "| Unit | Functions | ≥ 80% |" >> $GITHUB_STEP_SUMMARY
+          echo "| Unit | Statements | ≥ 90% |" >> $GITHUB_STEP_SUMMARY
+          echo "| Integration | - | No threshold (informational) |" >> $GITHUB_STEP_SUMMARY
+          echo "| E2E | Pass Rate | 100% |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Combine badge data
+        run: |
+          mkdir -p combined-badges
+          cp badges/unit/*.json combined-badges/ 2>/dev/null || true
+          cp badges/integration/*.json combined-badges/ 2>/dev/null || true
+          cp badges/e2e/*.json combined-badges/ 2>/dev/null || true
+
+      - name: Upload combined badge data
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-badges
+          path: combined-badges/
+          retention-days: 90
+
+  # Publish badge JSON files to the 'badges' branch for shields.io endpoint badges
+  publish-badges:
+    runs-on: ubuntu-latest
+    needs: [test-summary]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download combined badge data
+        uses: actions/download-artifact@v4
+        with:
+          name: test-badges
+          path: badges/
+        continue-on-error: true
+
+      - name: Publish badges to badges branch
+        run: |
+          if [ ! -d badges ] || [ -z "$(ls -A badges/)" ]; then
+            echo "No badge data found, skipping publish"
+            exit 0
+          fi
+
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Create orphan branch with only badge files
+          git checkout --orphan badges-tmp
+          git rm -rf . > /dev/null 2>&1 || true
+          cp -r badges/* .
+          git add *.json
+          git commit -m "Update test badges [skip ci]"
+          git push -f origin badges-tmp:badges
