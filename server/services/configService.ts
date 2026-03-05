@@ -43,17 +43,22 @@ interface ConfigFileDataSources {
   };
 }
 
-// Config status returned to frontend (no credentials)
+// Config status returned to frontend (no raw credentials — username is safe to expose,
+// password is indicated only as a boolean so the UI can show placeholder dots)
 export interface ConfigStatus {
   storage: {
     configured: boolean;
     source: 'file' | 'environment' | 'none';
-    endpoint?: string;  // Show endpoint for verification, never credentials
+    endpoint?: string;
+    username?: string;    // Safe to return; lets the form pre-fill the username
+    hasPassword?: boolean; // True when a password is stored; never return the value itself
   };
   observability: {
     configured: boolean;
     source: 'file' | 'environment' | 'none';
     endpoint?: string;
+    username?: string;
+    hasPassword?: boolean;
     indexes?: {
       traces?: string;
       logs?: string;
@@ -73,19 +78,23 @@ function getConfigFilePath(): string {
 
 /**
  * Read the full JSON config from disk.
- * Same pattern as customAgentStore.ts — returns empty object on any error.
+ * Returns `{}` when file doesn't exist (safe to create new).
+ * Returns `null` when file exists but read/parse fails (unsafe to write — would clobber).
  */
-function readConfigFromDisk(): Record<string, unknown> {
+function readConfigFromDisk(): Record<string, unknown> | null {
   try {
     const filePath = getConfigFilePath();
     if (!fs.existsSync(filePath)) return {};
     const raw = fs.readFileSync(filePath, 'utf-8');
     const parsed = JSON.parse(raw);
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      console.error('[ConfigService] Config file contains non-object content, refusing to overwrite');
+      return null;
+    }
     return parsed as Record<string, unknown>;
   } catch (err) {
     console.error('[ConfigService] Failed to read config file:', err);
-    return {};
+    return null;
   }
 }
 
@@ -113,7 +122,7 @@ function writeConfigToDisk(config: Record<string, unknown>): void {
  * Returns null if not configured in file
  */
 export function getStorageConfigFromFile(): StorageClusterConfig | null {
-  const config = readConfigFromDisk() as ConfigFileDataSources;
+  const config = readConfigFromDisk() as ConfigFileDataSources | null;
 
   if (!config?.storage?.endpoint) {
     return null;
@@ -132,11 +141,23 @@ export function getStorageConfigFromFile(): StorageClusterConfig | null {
  */
 export function saveStorageConfig(storageConfig: StorageClusterConfig): void {
   const existing = readConfigFromDisk();
+  if (existing === null) {
+    throw new Error('Cannot save storage config: existing config file is unreadable or corrupt');
+  }
+  const existingStorage = (existing.storage as any) || {};
+
+  // Use ?? so that an absent/undefined field in the incoming payload falls back
+  // to whatever is already stored. The form converts sentinel and empty values
+  // to undefined before sending. Note: if called directly with password: "",
+  // the empty string passes through ?? but is omitted by the falsy spread
+  // below, effectively clearing the stored credential. This is intentional.
+  const resolvedUsername = storageConfig.username ?? existingStorage.username;
+  const resolvedPassword = storageConfig.password ?? existingStorage.password;
 
   existing.storage = {
     endpoint: storageConfig.endpoint,
-    ...(storageConfig.username && { username: storageConfig.username }),
-    ...(storageConfig.password && { password: storageConfig.password }),
+    ...(resolvedUsername && { username: resolvedUsername }),
+    ...(resolvedPassword && { password: resolvedPassword }),
     ...(storageConfig.tlsSkipVerify !== undefined && { tlsSkipVerify: storageConfig.tlsSkipVerify }),
   };
 
@@ -148,6 +169,9 @@ export function saveStorageConfig(storageConfig: StorageClusterConfig): void {
  */
 export function clearStorageConfig(): void {
   const existing = readConfigFromDisk();
+  if (existing === null) {
+    throw new Error('Cannot clear storage config: existing config file is unreadable or corrupt');
+  }
   delete existing.storage;
 
   // If config is now empty, delete the file
@@ -171,7 +195,7 @@ export function clearStorageConfig(): void {
  * Returns null if not configured in file
  */
 export function getObservabilityConfigFromFile(): ObservabilityClusterConfig | null {
-  const config = readConfigFromDisk() as ConfigFileDataSources;
+  const config = readConfigFromDisk() as ConfigFileDataSources | null;
 
   if (!config?.observability?.endpoint) {
     return null;
@@ -191,11 +215,20 @@ export function getObservabilityConfigFromFile(): ObservabilityClusterConfig | n
  */
 export function saveObservabilityConfig(obsConfig: ObservabilityClusterConfig): void {
   const existing = readConfigFromDisk();
+  if (existing === null) {
+    throw new Error('Cannot save observability config: existing config file is unreadable or corrupt');
+  }
+  const existingObs = (existing.observability as any) || {};
+
+  // Use ?? so that an absent/undefined field in the incoming payload falls back
+  // to whatever is already stored.
+  const resolvedUsername = obsConfig.username ?? existingObs.username;
+  const resolvedPassword = obsConfig.password ?? existingObs.password;
 
   existing.observability = {
     endpoint: obsConfig.endpoint,
-    ...(obsConfig.username && { username: obsConfig.username }),
-    ...(obsConfig.password && { password: obsConfig.password }),
+    ...(resolvedUsername && { username: resolvedUsername }),
+    ...(resolvedPassword && { password: resolvedPassword }),
     ...(obsConfig.tlsSkipVerify !== undefined && { tlsSkipVerify: obsConfig.tlsSkipVerify }),
     ...(obsConfig.indexes && Object.keys(obsConfig.indexes).length > 0 && {
       indexes: obsConfig.indexes,
@@ -210,6 +243,9 @@ export function saveObservabilityConfig(obsConfig: ObservabilityClusterConfig): 
  */
 export function clearObservabilityConfig(): void {
   const existing = readConfigFromDisk();
+  if (existing === null) {
+    throw new Error('Cannot clear observability config: existing config file is unreadable or corrupt');
+  }
   delete existing.observability;
 
   // If config is now empty, delete the file
@@ -233,7 +269,7 @@ export function clearObservabilityConfig(): void {
  * Never exposes credentials - only shows source and endpoint
  */
 export function getConfigStatus(): ConfigStatus {
-  const config = readConfigFromDisk() as ConfigFileDataSources;
+  const config = readConfigFromDisk() as ConfigFileDataSources | null;
 
   // Determine storage config source
   let storageSource: 'file' | 'environment' | 'none' = 'none';
@@ -270,11 +306,23 @@ export function getConfigStatus(): ConfigStatus {
       configured: storageSource !== 'none',
       source: storageSource,
       endpoint: storageEndpoint,
+      username: storageSource === 'file'
+        ? config?.storage?.username
+        : process.env.OPENSEARCH_STORAGE_USERNAME,
+      hasPassword: storageSource === 'file'
+        ? Boolean(config?.storage?.password)
+        : Boolean(process.env.OPENSEARCH_STORAGE_PASSWORD),
     },
     observability: {
       configured: obsSource !== 'none',
       source: obsSource,
       endpoint: obsEndpoint,
+      username: obsSource === 'file'
+        ? config?.observability?.username
+        : process.env.OPENSEARCH_LOGS_USERNAME,
+      hasPassword: obsSource === 'file'
+        ? Boolean(config?.observability?.password)
+        : Boolean(process.env.OPENSEARCH_LOGS_PASSWORD),
       indexes: obsIndexes,
     },
   };

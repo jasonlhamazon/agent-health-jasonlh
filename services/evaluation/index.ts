@@ -9,7 +9,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { AgentConfig, EvaluationReport, TestCase, TrajectoryStep, OpenSearchLog, LLMJudgeResponse, ConnectorProtocol, BeforeRequestContext, AfterResponseContext } from '@/types';
+import { AgentConfig, EvaluationReport, TestCase, TrajectoryStep, OpenSearchLog, LLMJudgeResponse, ConnectorProtocol, BeforeRequestContext, AfterResponseContext, TestCasePerformanceMetrics } from '@/types';
 import { executeBeforeRequestHook, executeAfterResponseHook } from '@/lib/hooks';
 import { AGUIToTrajectoryConverter, consumeSSEStream, buildAgentPayload } from '@/services/agent';
 import { AGUIEvent } from '@/types/agui';
@@ -147,6 +147,7 @@ export async function runEvaluationWithConnector(
     let request: ConnectorRequest = {
       testCase,
       modelId,
+      connectorConfig: agentWithConnector.connectorConfig as Record<string, any>,
     };
 
     // Build auth from agent config
@@ -179,7 +180,8 @@ export async function runEvaluationWithConnector(
       }
     }
 
-    // Execute via connector
+    // Execute via connector (with timing)
+    const agentStartTime = Date.now();
     let result = await connector.execute(
       effectiveEndpoint,
       request,
@@ -187,6 +189,7 @@ export async function runEvaluationWithConnector(
       onStep,
       onRawEvent
     );
+    const agentDurationMs = Date.now() - agentStartTime;
 
     // Execute afterResponse hook if defined
     if (agent.hooks?.afterResponse) {
@@ -242,6 +245,10 @@ export async function runEvaluationWithConnector(
         runId: agentRunId || undefined,
         rawEvents,
         connectorProtocol: connector.type as ConnectorProtocol,
+        performanceMetrics: {
+          durationMs: Date.now() - evalStartTime,
+          agentDurationMs,
+        },
       };
     }
 
@@ -249,7 +256,6 @@ export async function runEvaluationWithConnector(
     const models = getModels();
     const modelConfig = models[modelId];
     const judgeModelId = modelConfig?.model_id || modelId;
-    const judgeStartTime = Date.now();
     const judgment = await callBedrockJudge(
       fullTrajectory,
       {
@@ -260,7 +266,6 @@ export async function runEvaluationWithConnector(
       (chunk) => debug('Eval', 'Judge progress:', chunk.slice(0, 100)),
       judgeModelId
     );
-    const judgeLatencyMs = Date.now() - judgeStartTime;
 
     debug('Eval', 'Metrics:', judgment.metrics);
 
@@ -269,7 +274,7 @@ export async function runEvaluationWithConnector(
       timestamp: new Date().toISOString(),
       promptTokens: 0,
       completionTokens: 0,
-      latencyMs: judgeLatencyMs,
+      latencyMs: judgment.judgeDurationMs ?? 0,
       rawResponse: judgment.llmJudgeReasoning,
       parsedMetrics: {
         accuracy: judgment.metrics.accuracy,
@@ -299,6 +304,12 @@ export async function runEvaluationWithConnector(
       runId: agentRunId || undefined,
       rawEvents,
       connectorProtocol: connector.type as ConnectorProtocol,
+      performanceMetrics: {
+        durationMs: Date.now() - evalStartTime,
+        agentDurationMs,
+        judgeDurationMs: judgment.judgeDurationMs,
+        judgeAttempts: judgment.judgeAttempts,
+      },
     };
   } catch (error) {
     console.error('[Eval] Error:', error instanceof Error ? error.message : error);
@@ -491,7 +502,6 @@ export async function runEvaluation(
     const models = getModels();
     const modelConfig = models[modelId];
     const judgeModelId = modelConfig?.model_id || modelId;
-    const judgeStartTime = Date.now();
     const judgment = await callBedrockJudge(
       fullTrajectory,
       {
@@ -502,7 +512,6 @@ export async function runEvaluation(
       (chunk) => debug('Eval', 'Judge progress:', chunk.slice(0, 100)),
       judgeModelId
     );
-    const judgeLatencyMs = Date.now() - judgeStartTime;
 
     debug('Eval', 'Metrics:', judgment.metrics);
 
@@ -511,7 +520,7 @@ export async function runEvaluation(
       timestamp: new Date().toISOString(),
       promptTokens: 0,
       completionTokens: 0,
-      latencyMs: judgeLatencyMs,
+      latencyMs: judgment.judgeDurationMs ?? 0,
       rawResponse: judgment.llmJudgeReasoning,
       parsedMetrics: {
         accuracy: judgment.metrics.accuracy,

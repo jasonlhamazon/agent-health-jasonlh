@@ -27,6 +27,7 @@ import {
   createDoctorCommand,
   createInitCommand,
   createMigrateCommand,
+  createCompareServicesCommand,
 } from './commands/index.js';
 
 // Get package.json for version
@@ -117,6 +118,7 @@ program.action(async (options) => {
 
     const url = `http://localhost:${port}`;
     console.log(chalk.green(`  Server running at ${chalk.bold(url)}\n`));
+    console.log(chalk.green(`  Demo data loaded`));
 
     if (options.browser !== false) {
       console.log(chalk.gray('  Opening browser...'));
@@ -141,6 +143,7 @@ program.addCommand(createReportCommand());
 program.addCommand(createDoctorCommand());
 program.addCommand(createInitCommand());
 program.addCommand(createMigrateCommand());
+program.addCommand(createCompareServicesCommand());
 
 // Add serve command as an alias for the default action
 program

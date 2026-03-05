@@ -74,6 +74,25 @@ export default {
     //     },
     //   },
     // },
+
+    // Example 5: Claude Code with MCP servers (competitive evaluation)
+    // Uses a standard MCP config JSON file (same format as ~/.claude.json mcpServers)
+    // {
+    //   key: "claude-code-eval",
+    //   name: "Claude Code (Eval)",
+    //   endpoint: "claude",
+    //   connectorType: "claude-code",
+    //   models: ["claude-sonnet-4"],
+    //   useTraces: true,
+    //   connectorConfig: {
+    //     dangerouslySkipPermissions: true,
+    //     appendSystemPrompt: "You are an observability agent...",
+    //     allowedTools: ["mcp__aws-prometheus__*", "mcp__aws-cloudwatch__*", "Bash"],
+    //     mcpConfigPath: "./mcp-config.json",  // standard MCP config file
+    //     strictMcpConfig: true,
+    //     env: { CLAUDE_CODE_USE_BEDROCK: "1", AWS_PROFILE: "Bedrock" },
+    //   },
+    // },
   ],
 
   // Custom models (merged with built-in models by default)
