@@ -297,6 +297,12 @@ function validateRunConfig(config: any): string | null {
   if (!config.modelId || typeof config.modelId !== 'string') {
     return 'modelId is required and must be a string';
   }
+  if (config.concurrency !== undefined) {
+    const c = Number(config.concurrency);
+    if (!Number.isInteger(c) || c < 1 || c > 20) {
+      return 'concurrency must be an integer between 1 and 20';
+    }
+  }
   return null;
 }
 
@@ -977,6 +983,19 @@ router.post('/api/storage/benchmarks/:id/execute', async (req: Request, res: Res
           cancellationToken,
           client,
           onTestCaseComplete: async (testCaseId, result) => {
+            // Stream per-test-case result to the client
+            const tc = testCaseMap.get(testCaseId);
+            const completedCount = Object.values(run.results).filter(
+              r => r.status === 'completed' || r.status === 'failed'
+            ).length;
+            res.write(`data: ${JSON.stringify({
+              type: 'progress',
+              currentTestCaseIndex: completedCount - 1,
+              totalTestCases: benchmark.testCaseIds.length,
+              currentTestCase: { id: testCaseId, name: tc?.name || testCaseId },
+              result: { status: result.status, error: result.error },
+            })}\n\n`);
+
             // Persist intermediate progress to OpenSearch for real-time polling
             try {
               await updateTestCaseResult(client, id, run.id, testCaseId, result);

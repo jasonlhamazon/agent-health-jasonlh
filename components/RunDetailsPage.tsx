@@ -5,11 +5,17 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
-import { ArrowLeft, Calendar, CheckCircle2, XCircle, BarChart3, PanelLeftClose, PanelLeft, Clock, Loader2, StopCircle, Ban } from 'lucide-react';
+import { ArrowLeft, Calendar, CheckCircle2, XCircle, BarChart3, PanelLeftClose, PanelLeft, Clock, Loader2, StopCircle, Ban, Timer, Download, GitCompare } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { useSidebar } from '@/components/ui/sidebar';
@@ -18,6 +24,8 @@ import { cancelExperimentRun } from '@/services/client';
 import { Experiment, ExperimentRun, EvaluationReport, TestCase } from '@/types';
 import { DEFAULT_CONFIG } from '@/lib/constants';
 import { getDifficultyColor, formatDate, getModelName } from '@/lib/utils';
+import { formatDuration } from '@/services/metrics';
+import { ENV_CONFIG } from '@/lib/config';
 import { RunDetailsContent } from './RunDetailsContent';
 import { RunSummaryPanel } from './RunSummaryPanel';
 
@@ -148,13 +156,13 @@ const Sidebar = ({ context, selectedItem, onSelectItem, onToggleCollapse, isColl
                     {isPassed && <CheckCircle2 size={18} className="text-green-700 dark:text-green-400" />}
                     {isFailed && <XCircle size={18} className="text-red-700 dark:text-red-400" />}
                     {!isPassed && !isFailed && result.status === 'running' && (
-                      <Loader2 size={18} className="text-blue-400 animate-spin" />
+                      <Loader2 size={18} className="text-blue-700 dark:text-blue-400 animate-spin" />
                     )}
                     {!isPassed && !isFailed && result.status === 'pending' && (
-                      <Clock size={18} className="text-yellow-400" />
+                      <Clock size={18} className="text-yellow-700 dark:text-yellow-400" />
                     )}
                     {!isPassed && !isFailed && result.status === 'cancelled' && (
-                      <Ban size={18} className="text-orange-400" />
+                      <Ban size={18} className="text-orange-700 dark:text-orange-400" />
                     )}
                     {!isPassed && !isFailed && result.status !== 'running' && result.status !== 'pending' && result.status !== 'cancelled' && (
                       <div className="w-[18px] h-[18px] rounded-full border-2 border-muted-foreground/30" />
@@ -186,7 +194,7 @@ const Sidebar = ({ context, selectedItem, onSelectItem, onToggleCollapse, isColl
                     </div>
 
                     {result.status === 'failed' && (
-                      <p className="text-xs text-red-400 mt-1">
+                      <p className="text-xs text-red-700 dark:text-red-400 mt-1">
                         Execution failed
                       </p>
                     )}
@@ -262,8 +270,15 @@ export const RunDetailsPage: React.FC = () => {
           return;
         }
 
-        // Load all reports for this experiment run
-        const siblingReports = await asyncRunStorage.getByExperimentRun(routeExperimentId, runId);
+        // Load all reports for this experiment run by report ID
+        const reportIds = Object.values(expRun.results || {}).map(r => r.reportId).filter(Boolean);
+        const siblingReports: EvaluationReport[] = [];
+        for (const reportId of reportIds) {
+          const report = await asyncRunStorage.getReportById(reportId);
+          if (report) {
+            siblingReports.push(report);
+          }
+        }
 
         // Load all test cases referenced in this run
         const allTestCases = await asyncTestCaseStorage.getAll();
@@ -294,6 +309,11 @@ export const RunDetailsPage: React.FC = () => {
         if (testCaseFromUrl && testCaseIds.includes(testCaseFromUrl)) {
           setSelectedItem(testCaseFromUrl);
           // Collapse main sidebar when loading with a test case selected
+          setMainSidebarOpen(false);
+        } else if (testCaseIds.length === 1) {
+          // Auto-select the only test case when there's just one
+          // (full-width layout has no sidebar/summary view)
+          setSelectedItem(testCaseIds[0]);
           setMainSidebarOpen(false);
         } else {
           setSelectedItem('summary');
@@ -428,6 +448,41 @@ export const RunDetailsPage: React.FC = () => {
     return { passed, failed, pending, running, total };
   };
 
+  // Download report in specified format (JSON/HTML/PDF) via server API
+  const downloadReport = async (format: string) => {
+    if (!routeExperimentId) return;
+
+    const params = new URLSearchParams({ format });
+    params.set('runIds', runId!);
+    const url = `${ENV_CONFIG.backendUrl}/api/storage/benchmarks/${encodeURIComponent(routeExperimentId)}/report?${params.toString()}`;
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({ error: response.statusText }));
+        alert(`Report download failed: ${errorBody.error || response.statusText}`);
+        return;
+      }
+
+      const contentDisposition = response.headers.get('content-disposition') || '';
+      const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+      const safeName = (experimentContext?.experimentRun.name || 'report').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = filenameMatch?.[1] || `${safeName}_report.${format}`;
+
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    } catch (error) {
+      console.error('Report download failed:', error);
+    }
+  };
+
   // Determine if we should show the sidebar
   const hasSidebar = experimentContext && Object.keys(experimentContext.experimentRun.results || {}).length > 1;
 
@@ -533,6 +588,22 @@ export const RunDetailsPage: React.FC = () => {
               </span>
               <span className="text-muted-foreground/50">·</span>
               <span>Model: {getModelName(report?.modelName || experimentContext.experimentRun.modelId)}</span>
+              {experimentContext.experimentRun.performanceMetrics?.durationMs != null && (
+                <>
+                  <span className="text-muted-foreground/50">·</span>
+                  <span className="flex items-center gap-1" title="Total wall-clock time for the complete benchmark run">
+                    <Timer size={12} />
+                    Run duration: {formatDuration(experimentContext.experimentRun.performanceMetrics.durationMs)}
+                  </span>
+                </>
+              )}
+              {experimentContext.experimentRun.performanceMetrics?.concurrency != null &&
+               experimentContext.experimentRun.performanceMetrics.concurrency > 1 && (
+                <>
+                  <span className="text-muted-foreground/50">·</span>
+                  <span>Concurrency: {experimentContext.experimentRun.performanceMetrics.concurrency}</span>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -542,13 +613,13 @@ export const RunDetailsPage: React.FC = () => {
           {stats && (
             <div className="flex items-center gap-2 text-sm">
               {stats.running > 0 && (
-                <span className="flex items-center gap-1 text-blue-400" title="Running">
+                <span className="flex items-center gap-1 text-blue-700 dark:text-blue-400" title="Running">
                   <Loader2 size={14} className="animate-spin" />
                   {stats.running}
                 </span>
               )}
               {stats.pending > 0 && (
-                <span className="flex items-center gap-1 text-yellow-400" title="Pending">
+                <span className="flex items-center gap-1 text-yellow-700 dark:text-yellow-400" title="Pending">
                   <Clock size={14} />
                   {stats.pending}
                 </span>
@@ -557,12 +628,42 @@ export const RunDetailsPage: React.FC = () => {
                 <CheckCircle2 size={16} />
                 {stats.passed}
               </span>
-              <span className="flex items-center gap-1 text-red-400">
+              <span className="flex items-center gap-1 text-red-700 dark:text-red-400">
                 <XCircle size={16} />
                 {stats.failed}
               </span>
               <span className="text-muted-foreground">/ {stats.total}</span>
             </div>
+          )}
+
+          {/* Compare Runs button */}
+          {routeExperimentId && experimentContext && (experimentContext.experiment.runs?.length ?? 0) > 1 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate(`/compare/${routeExperimentId}?runs=${runId}`)}
+              data-testid="compare-runs-button"
+            >
+              <GitCompare size={14} className="mr-1" />
+              Compare Runs
+            </Button>
+          )}
+
+          {/* Download Report dropdown */}
+          {routeExperimentId && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" data-testid="download-report-button">
+                  <Download size={14} className="mr-1" />
+                  Download Report
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={() => downloadReport('json')} data-testid="download-json">JSON</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => downloadReport('html')} data-testid="download-html">HTML</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => downloadReport('pdf')} data-testid="download-pdf">PDF</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
 
           {/* Cancel button for running runs */}
@@ -582,7 +683,7 @@ export const RunDetailsPage: React.FC = () => {
                   setIsCancelling(false);
                 }
               }}
-              className="text-red-400 hover:text-red-300 hover:bg-red-500/10 border-red-500/30"
+              className="text-red-700 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 hover:bg-red-500/10 border-red-500/30"
             >
               <StopCircle size={14} className="mr-1" />
               {isCancelling ? 'Cancelling...' : 'Cancel'}
@@ -627,6 +728,7 @@ export const RunDetailsPage: React.FC = () => {
                   report={displayReport}
                   showViewAllReports={true}
                   onViewAllReports={handleViewAllReports}
+                  performanceMetrics={experimentContext!.experimentRun.results?.[selectedItem]?.performanceMetrics}
                 />
               ) : (
                 // Show pending/running state based on result status
@@ -640,13 +742,13 @@ export const RunDetailsPage: React.FC = () => {
                       <div className="text-center">
                         {isRunning ? (
                           <>
-                            <Loader2 size={48} className="mx-auto mb-4 text-blue-400 animate-spin" />
+                            <Loader2 size={48} className="mx-auto mb-4 text-blue-700 dark:text-blue-400 animate-spin" />
                             <p className="text-lg font-medium">Test case running</p>
                             <p className="text-sm mt-1">Executing test case...</p>
                           </>
                         ) : isPending ? (
                           <>
-                            <Clock size={48} className="mx-auto mb-4 text-yellow-400 animate-pulse" />
+                            <Clock size={48} className="mx-auto mb-4 text-yellow-700 dark:text-yellow-400 animate-pulse" />
                             <p className="text-lg font-medium">Test case pending</p>
                             <p className="text-sm mt-1">Waiting for execution...</p>
                           </>
@@ -673,6 +775,7 @@ export const RunDetailsPage: React.FC = () => {
               report={displayReport}
               showViewAllReports={true}
               onViewAllReports={handleViewAllReports}
+              performanceMetrics={experimentContext.experimentRun.results?.[selectedItem]?.performanceMetrics}
             />
           ) : (
             // Show pending/running state when no report available
@@ -687,13 +790,13 @@ export const RunDetailsPage: React.FC = () => {
                   <div className="text-center">
                     {isRunning ? (
                       <>
-                        <Loader2 size={48} className="mx-auto mb-4 text-blue-400 animate-spin" />
+                        <Loader2 size={48} className="mx-auto mb-4 text-blue-700 dark:text-blue-400 animate-spin" />
                         <p className="text-lg font-medium">Test case running</p>
                         <p className="text-sm mt-1">Executing test case...</p>
                       </>
                     ) : isPending ? (
                       <>
-                        <Clock size={48} className="mx-auto mb-4 text-yellow-400 animate-pulse" />
+                        <Clock size={48} className="mx-auto mb-4 text-yellow-700 dark:text-yellow-400 animate-pulse" />
                         <p className="text-lg font-medium">Test case pending</p>
                         <p className="text-sm mt-1">Waiting for execution...</p>
                       </>

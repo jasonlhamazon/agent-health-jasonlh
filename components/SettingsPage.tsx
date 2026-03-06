@@ -12,6 +12,8 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import type { ConnectorProtocol } from '@/types';
 import { storageAdmin } from '@/services/storage/opensearchClient';
 import {
   hasLocalStorageData,
@@ -44,6 +46,8 @@ interface AgentEndpoint {
   id: string;
   name: string;
   endpoint: string;
+  connectorType?: ConnectorProtocol;
+  useTraces?: boolean;
 }
 
 const LEGACY_STORAGE_KEY = 'agenteval_custom_endpoints';
@@ -54,11 +58,17 @@ const LEGACY_STORAGE_KEY = 'agenteval_custom_endpoints';
 function getCustomEndpointsFromConfig(): AgentEndpoint[] {
   return DEFAULT_CONFIG.agents
     .filter(a => a.isCustom)
-    .map(a => ({ id: a.key, name: a.name, endpoint: a.endpoint }));
+    .map(a => ({
+      id: a.key,
+      name: a.name,
+      endpoint: a.endpoint,
+      connectorType: a.connectorType,
+      useTraces: a.useTraces,
+    }));
 }
 
 export const SettingsPage: React.FC = () => {
-  console.log('SettingsPage loaded - built-in badge should be BLUE');
+
   const [debugMode, setDebugMode] = useState(false);
   const [currentTheme, setCurrentTheme] = useState<Theme>('dark');
   const [storageStats, setStorageStats] = useState<StorageStats | null>(null);
@@ -77,6 +87,8 @@ export const SettingsPage: React.FC = () => {
   const [editingEndpointId, setEditingEndpointId] = useState<string | null>(null);
   const [newEndpointName, setNewEndpointName] = useState('');
   const [newEndpointUrl, setNewEndpointUrl] = useState('');
+  const [newConnectorType, setNewConnectorType] = useState<ConnectorProtocol>('agui-streaming');
+  const [newUseTraces, setNewUseTraces] = useState(false);
   const [endpointUrlError, setEndpointUrlError] = useState<string | null>(null);
 
   // Data source configuration state (form inputs - not stored values)
@@ -132,22 +144,31 @@ export const SettingsPage: React.FC = () => {
     }
   }, []);
 
+  // Sentinel value used in the password field to mean "a password is stored on
+  // the server; the user has not changed it yet."  It is never sent to the server —
+  // we convert it back to undefined so the server-side ?? merge keeps the stored value.
+  const PASSWORD_STORED_SENTINEL = '__STORED__';
+
   // Load config status from server
   const loadConfigStatus = useCallback(async () => {
     try {
       const status = await getConfigStatus();
       setConfigStatus(status);
-      // Pre-fill form with current endpoint (but never passwords)
+      // Pre-fill form with endpoint + username; use sentinel for password when stored.
       if (status.storage.endpoint) {
         setStorageConfigState(prev => ({
           ...prev,
           endpoint: status.storage.endpoint || '',
+          username: status.storage.username || '',
+          password: status.storage.hasPassword ? PASSWORD_STORED_SENTINEL : '',
         }));
       }
       if (status.observability.endpoint) {
         setObservabilityConfigState(prev => ({
           ...prev,
           endpoint: status.observability.endpoint || '',
+          username: status.observability.username || '',
+          password: status.observability.hasPassword ? PASSWORD_STORED_SENTINEL : '',
           tracesIndex: status.observability.indexes?.traces || '',
           logsIndex: status.observability.indexes?.logs || '',
           metricsIndex: status.observability.indexes?.metrics || '',
@@ -261,7 +282,12 @@ export const SettingsPage: React.FC = () => {
       const response = await fetch(`${ENV_CONFIG.backendUrl}/api/agents/custom`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newEndpointName.trim(), endpoint: newEndpointUrl.trim() }),
+        body: JSON.stringify({
+          name: newEndpointName.trim(),
+          endpoint: newEndpointUrl.trim(),
+          connectorType: newConnectorType,
+          useTraces: newUseTraces,
+        }),
       });
       if (!response.ok) {
         const err = await response.json();
@@ -277,6 +303,8 @@ export const SettingsPage: React.FC = () => {
 
     setNewEndpointName('');
     setNewEndpointUrl('');
+    setNewConnectorType('agui-streaming');
+    setNewUseTraces(false);
     setEndpointUrlError(null);
     setIsAddingEndpoint(false);
   };
@@ -296,7 +324,12 @@ export const SettingsPage: React.FC = () => {
       const response = await fetch(`${ENV_CONFIG.backendUrl}/api/agents/custom`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newEndpointName.trim(), endpoint: newEndpointUrl.trim() }),
+        body: JSON.stringify({
+          name: newEndpointName.trim(),
+          endpoint: newEndpointUrl.trim(),
+          connectorType: newConnectorType,
+          useTraces: newUseTraces,
+        }),
       });
       if (!response.ok) {
         const err = await response.json();
@@ -313,6 +346,8 @@ export const SettingsPage: React.FC = () => {
     setEditingEndpointId(null);
     setNewEndpointName('');
     setNewEndpointUrl('');
+    setNewConnectorType('agui-streaming');
+    setNewUseTraces(false);
     setEndpointUrlError(null);
   };
 
@@ -332,6 +367,8 @@ export const SettingsPage: React.FC = () => {
     setEditingEndpointId(endpoint.id);
     setNewEndpointName(endpoint.name);
     setNewEndpointUrl(endpoint.endpoint);
+    setNewConnectorType(endpoint.connectorType ?? 'agui-streaming');
+    setNewUseTraces(endpoint.useTraces ?? false);
   };
 
   const cancelEdit = () => {
@@ -339,6 +376,8 @@ export const SettingsPage: React.FC = () => {
     setIsAddingEndpoint(false);
     setNewEndpointName('');
     setNewEndpointUrl('');
+    setNewConnectorType('agui-streaming');
+    setNewUseTraces(false);
     setEndpointUrlError(null);
   };
 
@@ -475,7 +514,10 @@ export const SettingsPage: React.FC = () => {
         body: JSON.stringify({
           endpoint: storageConfig.endpoint,
           username: storageConfig.username || undefined,
-          password: storageConfig.password || undefined,
+          // Strip sentinel — server will use its stored password for the test
+          password: storageConfig.password === PASSWORD_STORED_SENTINEL
+            ? undefined
+            : (storageConfig.password || undefined),
           tlsSkipVerify: storageConfig.tlsSkipVerify || undefined,
         }),
       });
@@ -512,19 +554,24 @@ export const SettingsPage: React.FC = () => {
     }
 
     try {
+      // Strip sentinel — an unchanged sentinel means "keep whatever is stored";
+      // the server-side ?? merge will preserve it.
+      const storagePasswordToSend = storageConfig.password === PASSWORD_STORED_SENTINEL
+        ? undefined
+        : (storageConfig.password || undefined);
+
       await saveStorageConfig({
         endpoint: storageConfig.endpoint,
         username: storageConfig.username || undefined,
-        password: storageConfig.password || undefined,
+        password: storagePasswordToSend,
         tlsSkipVerify: storageConfig.tlsSkipVerify,
       });
       setStorageTestStatus('idle');
       setStorageTestMessage('Configuration saved to server');
-      // Clear password field after save (never keep passwords in form state)
-      setStorageConfigState(prev => ({ ...prev, password: '' }));
-      setTimeout(() => setStorageTestMessage(''), 3000);
+      // Reload to re-apply sentinel state for any stored credentials
       loadStorageStats();
       loadConfigStatus();
+      setTimeout(() => setStorageTestMessage(''), 3000);
     } catch (error) {
       setStorageTestStatus('error');
       setStorageTestMessage(error instanceof Error ? error.message : 'Failed to save configuration');
@@ -566,7 +613,10 @@ export const SettingsPage: React.FC = () => {
         body: JSON.stringify({
           endpoint: observabilityConfig.endpoint,
           username: observabilityConfig.username || undefined,
-          password: observabilityConfig.password || undefined,
+          // Strip sentinel — server will use its stored password for the test
+          password: observabilityConfig.password === PASSWORD_STORED_SENTINEL
+            ? undefined
+            : (observabilityConfig.password || undefined),
           tlsSkipVerify: observabilityConfig.tlsSkipVerify || undefined,
           indexes: {
             traces: observabilityConfig.tracesIndex || undefined,
@@ -611,10 +661,15 @@ export const SettingsPage: React.FC = () => {
     }
 
     try {
+      // Strip sentinel — same logic as storage save above.
+      const obsPasswordToSend = observabilityConfig.password === PASSWORD_STORED_SENTINEL
+        ? undefined
+        : (observabilityConfig.password || undefined);
+
       await saveObservabilityConfig({
         endpoint: observabilityConfig.endpoint,
         username: observabilityConfig.username || undefined,
-        password: observabilityConfig.password || undefined,
+        password: obsPasswordToSend,
         tlsSkipVerify: observabilityConfig.tlsSkipVerify,
         indexes: {
           traces: observabilityConfig.tracesIndex || undefined,
@@ -624,10 +679,9 @@ export const SettingsPage: React.FC = () => {
       });
       setObservabilityTestStatus('idle');
       setObservabilityTestMessage('Configuration saved to server');
-      // Clear password field after save (never keep passwords in form state)
-      setObservabilityConfigState(prev => ({ ...prev, password: '' }));
-      setTimeout(() => setObservabilityTestMessage(''), 3000);
+      // Reload to re-apply sentinel state for any stored credentials
       loadConfigStatus();
+      setTimeout(() => setObservabilityTestMessage(''), 3000);
     } catch (error) {
       setObservabilityTestStatus('error');
       setObservabilityTestMessage(error instanceof Error ? error.message : 'Failed to save configuration');
@@ -771,7 +825,7 @@ export const SettingsPage: React.FC = () => {
             <Label className="text-xs text-muted-foreground uppercase tracking-wide">Built-in Agents</Label>
 
             {DEFAULT_CONFIG.agents.filter(a => !a.isCustom).map((agent) => {
-              console.log('Rendering built-in agent:', agent.name, 'isCustom:', agent.isCustom);
+
               return (
                 <div
                   key={agent.key}
@@ -845,6 +899,30 @@ export const SettingsPage: React.FC = () => {
                   <p className="text-xs text-red-500">{endpointUrlError}</p>
                 )}
               </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Connector Type</Label>
+                <Select value={newConnectorType} onValueChange={(v) => setNewConnectorType(v as ConnectorProtocol)}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="agui-streaming">agui-streaming (default)</SelectItem>
+                    <SelectItem value="rest">rest</SelectItem>
+                    <SelectItem value="litellm">litellm</SelectItem>
+                    <SelectItem value="subprocess">subprocess</SelectItem>
+                    <SelectItem value="claude-code">claude-code</SelectItem>
+                    <SelectItem value="mock">mock</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="new-use-traces"
+                  checked={newUseTraces}
+                  onCheckedChange={setNewUseTraces}
+                />
+                <Label htmlFor="new-use-traces" className="text-xs">Enable Traces</Label>
+              </div>
               <div className="flex gap-2">
                 <Button size="sm" onClick={handleAddEndpoint} disabled={!newEndpointName.trim() || !newEndpointUrl.trim()}>
                   <Save size={14} className="mr-1" />
@@ -889,6 +967,30 @@ export const SettingsPage: React.FC = () => {
                           <p className="text-xs text-red-500">{endpointUrlError}</p>
                         )}
                       </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Connector Type</Label>
+                        <Select value={newConnectorType} onValueChange={(v) => setNewConnectorType(v as ConnectorProtocol)}>
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="agui-streaming">agui-streaming (default)</SelectItem>
+                            <SelectItem value="rest">rest</SelectItem>
+                            <SelectItem value="litellm">litellm</SelectItem>
+                            <SelectItem value="subprocess">subprocess</SelectItem>
+                            <SelectItem value="claude-code">claude-code</SelectItem>
+                            <SelectItem value="mock">mock</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          id={`edit-use-traces-${ep.id}`}
+                          checked={newUseTraces}
+                          onCheckedChange={setNewUseTraces}
+                        />
+                        <Label htmlFor={`edit-use-traces-${ep.id}`} className="text-xs">Enable Traces</Label>
+                      </div>
                       <div className="flex gap-2">
                         <Button size="sm" onClick={() => handleUpdateEndpoint(ep.id)}>
                           <Save size={14} className="mr-1" />
@@ -907,6 +1009,10 @@ export const SettingsPage: React.FC = () => {
                         <div className="text-xs text-muted-foreground truncate flex items-center gap-1 mt-1">
                           <ExternalLink size={10} />
                           {ep.endpoint}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
+                          <span>{ep.connectorType ?? 'agui-streaming'}</span>
+                          {ep.useTraces && <span className="px-1.5 py-0.5 rounded bg-green-100 text-green-900 border border-green-300 dark:bg-green-950/50 dark:text-green-300 dark:border-green-700/50">traces</span>}
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
@@ -993,8 +1099,8 @@ export const SettingsPage: React.FC = () => {
                   <Input
                     id="storage-password"
                     type={showStoragePassword ? 'text' : 'password'}
-                    placeholder="Leave blank to use env var"
-                    value={storageConfig.password}
+                    placeholder={storageConfig.password === PASSWORD_STORED_SENTINEL ? '••••••••' : 'Leave blank to use env var'}
+                    value={storageConfig.password === PASSWORD_STORED_SENTINEL ? '' : storageConfig.password}
                     onChange={(e) => setStorageConfigState({ ...storageConfig, password: e.target.value })}
                     className="pr-10"
                   />
@@ -1006,6 +1112,9 @@ export const SettingsPage: React.FC = () => {
                     {showStoragePassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
+                {storageConfig.password === PASSWORD_STORED_SENTINEL && (
+                  <p className="text-xs text-muted-foreground">Password stored — leave blank to keep it, or type a new one to replace it</p>
+                )}
               </div>
             </div>
 
@@ -1203,8 +1312,8 @@ export const SettingsPage: React.FC = () => {
                   <Input
                     id="obs-password"
                     type={showObservabilityPassword ? 'text' : 'password'}
-                    placeholder="Leave blank to use env var"
-                    value={observabilityConfig.password}
+                    placeholder={observabilityConfig.password === PASSWORD_STORED_SENTINEL ? '••••••••' : 'Leave blank to use env var'}
+                    value={observabilityConfig.password === PASSWORD_STORED_SENTINEL ? '' : observabilityConfig.password}
                     onChange={(e) => setObservabilityConfigState({ ...observabilityConfig, password: e.target.value })}
                     className="pr-10"
                   />
@@ -1216,6 +1325,9 @@ export const SettingsPage: React.FC = () => {
                     {showObservabilityPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
+                {observabilityConfig.password === PASSWORD_STORED_SENTINEL && (
+                  <p className="text-xs text-muted-foreground">Password stored — leave blank to keep it, or type a new one to replace it</p>
+                )}
               </div>
             </div>
 

@@ -10,6 +10,46 @@ Inspired by [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## [Unreleased]
 
 ### Added
+- Jason Hoang Nguyen (@jasonlhamazon) as maintainer and code owner ([#69](https://github.com/opensearch-project/agent-health/pull/69))
+- Parallel execution with configurable concurrency for benchmark runs ([#77](https://github.com/opensearch-project/agent-health/pull/77))
+- Performance metrics tracking (duration, concurrency, judge attempts) for benchmark runs and evaluations ([#77](https://github.com/opensearch-project/agent-health/pull/77))
+- Pagination for trace loading with `loadMoreTraces` support ([#77](https://github.com/opensearch-project/agent-health/pull/77))
+- Auto-select single test case in RunDetailsPage when only one is available ([#77](https://github.com/opensearch-project/agent-health/pull/77))
+- Admin routes for index mapping updates and reindexing with error handling ([#77](https://github.com/opensearch-project/agent-health/pull/77))
+- Unit tests for file-based storage modules ([#77](https://github.com/opensearch-project/agent-health/pull/77))
+- Ollama models (`deepseek-r1:8b`, `gemma3:12b`) to built-in model presets for LiteLLM provider ([#68](https://github.com/opensearch-project/agent-health/pull/68))
+- Add `afterResponse` and `buildTrajectory` hook for PER agent support ([#70](https://github.com/opensearch-project/agent-health/pull/70))
+
+### Fixed
+- Preserve cluster credentials on Save and pre-fill username in Settings ([#77](https://github.com/opensearch-project/agent-health/pull/77))
+- Password handling in SettingsPage using sentinel value for stored passwords ([#77](https://github.com/opensearch-project/agent-health/pull/77))
+- Error handling in CLI run and benchmark commands with streaming progress updates ([#77](https://github.com/opensearch-project/agent-health/pull/77))
+- Debug logging cleanup: replace console logs with structured debug statements across SettingsPage and API services ([#77](https://github.com/opensearch-project/agent-health/pull/77))
+- Enforce test case name requirement on creation and update with improved error handling ([#77](https://github.com/opensearch-project/agent-health/pull/77))
+- Dark mode color contrast for status icons (running, pending, cancelled, failed) across RunDetailsPage, RunSummaryPanel, and WorkflowNavigator ([#67](https://github.com/opensearch-project/agent-health/pull/67))
+- Type mismatch in `BulkCreateTestCasesResponse.errors` field from `boolean` to `number` ([#67](https://github.com/opensearch-project/agent-health/pull/67))
+- Remove unused minimap toggle from TraceVisualization component ([#67](https://github.com/opensearch-project/agent-health/pull/67))
+- Security vulnerabilities in `basic-ftp` (critical) and `rollup` (high) dependencies ([#67](https://github.com/opensearch-project/agent-health/pull/67))
+- `process is not defined` error in env config when running in browser context ([#68](https://github.com/opensearch-project/agent-health/pull/68))
+- QuickRunModal closing during evaluation causing run visibility lag ([#68](https://github.com/opensearch-project/agent-health/pull/68))
+- Broken documentation links: raw GitHub URL for `AGENT_HEALTH.md` and old repo name in `GETTING_STARTED.md` ([#68](https://github.com/opensearch-project/agent-health/pull/68))
+
+### Security
+- Update `minimatch` override to `^10.2.4` to fix ReDoS vulnerabilities (GHSA-7r86-cg39-jmmj, GHSA-23c5-xmqv-rm74) ([#77](https://github.com/opensearch-project/agent-health/pull/77))
+- Add `fast-xml-parser` override `5.4.1` to fix DoS vulnerability ([#77](https://github.com/opensearch-project/agent-health/pull/77))
+- Bump `@aws-sdk/client-bedrock-runtime` and `@aws-sdk/credential-providers` from `^3.936.0` to `^3.999.0` ([#77](https://github.com/opensearch-project/agent-health/pull/77))
+- Bump `hono` to `4.12.5` and `@hono/node-server` to `1.19.11` to fix authorization bypass (GHSA-wc8c-qw6v-h7f6), cookie injection (GHSA-5pq2-9x2x-5p6w), SSE injection (GHSA-p6xx-57qc-3wxr), and arbitrary file access (GHSA-q5qw-h33p-qvwr) ([#77](https://github.com/opensearch-project/agent-health/pull/77))
+
+### Removed
+- Stale Kiro spec files and sample test case data from `agent-health-data/` ([#67](https://github.com/opensearch-project/agent-health/pull/67))
+
+### Fixed
+- Update `RunSummaryTable` unit tests to match dark-mode-aware color classes (`text-green-700 dark:text-green-400`) introduced in a previous PR ([#51](https://github.com/opensearch-project/agent-health/pull/51))
+- Replace ambiguous `text=Import Failed` Playwright locator (matched 2 elements, causing strict mode rejection) with `getByRole('alertdialog')` in benchmark import e2e test ([#51](https://github.com/opensearch-project/agent-health/pull/51))
+- Update version to 0.1.1 and remove CI badges from README ([#58](https://github.com/opensearch-project/agent-health/pull/58))
+- Update agent-health CLI references to use opensearch-project ([#58](https://github.com/opensearch-project/agent-health/pull/58))
+
+### Added
 - Minimap toggle control for trace visualization with persistent state ([#44](https://github.com/opensearch-project/agent-health/pull/44))
 - Resizable flyout panels with drag-to-resize functionality and responsive layout ([#44](https://github.com/opensearch-project/agent-health/pull/44))
 - Add release trusted publisher to agent-health repository and rename dashboards-traces ([#45](https://github.com/opensearch-project/agent-health/pull/45))

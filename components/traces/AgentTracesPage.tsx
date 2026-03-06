@@ -41,9 +41,10 @@ import {
   groupSpansByTrace,
 } from '@/services/traces';
 import { formatDuration } from '@/services/traces/utils';
+import { startMeasure, endMeasure } from '@/lib/performance';
 import { TraceFlyoutContent } from './TraceFlyoutContent';
 import MetricsOverview from './MetricsOverview';
-import { useSidebarCollapse } from '../Layout';
+import { useSidebarCollapse } from '@/components/Layout';
 
 // ==================== Types ====================
 
@@ -187,8 +188,13 @@ export const AgentTracesPage: React.FC = () => {
 
   // Loading state
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+
+  // Pagination state (server-side cursor)
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
 
   // Trace data
   const [spans, setSpans] = useState<Span[]>([]);
@@ -324,9 +330,16 @@ export const AgentTracesPage: React.FC = () => {
     }
   };
 
-  // Fetch traces
+  // Refs for cursor/spans used by loadMoreTraces (avoid re-creating fetchTraces on every data change)
+  const cursorRef = React.useRef<string | null>(null);
+  const spansRef = React.useRef<Span[]>([]);
+  cursorRef.current = cursor;
+  spansRef.current = spans;
+
+  // Fetch traces (fresh load — resets pagination)
   const fetchTraces = useCallback(async () => {
     setIsLoading(true);
+    setCursor(null);
     setError(null);
 
     try {
@@ -334,7 +347,7 @@ export const AgentTracesPage: React.FC = () => {
         minutesAgo: parseInt(timeRange),
         serviceName: selectedAgent !== 'all' ? selectedAgent : undefined,
         textSearch: debouncedSearch || undefined,
-        size: 1000,
+        size: 100,
       });
 
       if (result.warning) {
@@ -345,15 +358,53 @@ export const AgentTracesPage: React.FC = () => {
       const processedTraces = processSpansToTraces(result.spans);
       const sortedTraces = sortTraces(processedTraces);
       setAllTraces(sortedTraces);
-      setDisplayedTraces(sortedTraces.slice(0, 100)); // Initially show first 100
+      setDisplayedTraces(sortedTraces.slice(0, 100));
       setDisplayCount(100);
       setLastRefresh(new Date());
+
+      // Update pagination state
+      setCursor(result.nextCursor || null);
+      setHasMore(result.hasMore || false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch traces');
     } finally {
       setIsLoading(false);
     }
   }, [selectedAgent, debouncedSearch, timeRange, processSpansToTraces, sortTraces]);
+
+  // Load more traces from server (appends to existing data)
+  const loadMoreTraces = useCallback(async () => {
+    const currentCursor = cursorRef.current;
+    if (!currentCursor || isLoadingMore) return;
+
+    startMeasure('AgentTracesPage.fetchMore');
+    setIsLoadingMore(true);
+
+    try {
+      const result = await fetchRecentTraces({
+        minutesAgo: parseInt(timeRange),
+        serviceName: selectedAgent !== 'all' ? selectedAgent : undefined,
+        textSearch: debouncedSearch || undefined,
+        size: 100,
+        cursor: currentCursor,
+      });
+
+      const allSpans = [...spansRef.current, ...result.spans];
+      setSpans(allSpans);
+      const processedTraces = processSpansToTraces(allSpans);
+      setAllTraces(processedTraces);
+      setDisplayedTraces(processedTraces);
+      setDisplayCount(processedTraces.length);
+
+      setCursor(result.nextCursor || null);
+      setHasMore(result.hasMore || false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch more traces');
+    } finally {
+      setIsLoadingMore(false);
+      endMeasure('AgentTracesPage.fetchMore');
+    }
+  }, [selectedAgent, debouncedSearch, timeRange, processSpansToTraces, isLoadingMore]);
 
   // Initial fetch and refetch on filter change
   useEffect(() => {
@@ -380,20 +431,28 @@ export const AgentTracesPage: React.FC = () => {
     return () => scrollContainer.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Lazy loading with intersection observer
+  // Lazy loading with intersection observer (client-side + server-side pagination)
   useEffect(() => {
     const currentRef = loadMoreRef.current;
-    if (!currentRef || displayCount >= allTraces.length) return;
+    if (!currentRef) return;
+
+    // Nothing left to show client-side or load from server
+    if (displayCount >= allTraces.length && !hasMore) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
         const target = entries[0];
-        if (target.isIntersecting && displayCount < allTraces.length) {
-          // Load next 100 traces
-          const nextCount = Math.min(displayCount + 100, allTraces.length);
-          const sortedTraces = sortTraces(allTraces);
-          setDisplayedTraces(sortedTraces.slice(0, nextCount));
-          setDisplayCount(nextCount);
+        if (target.isIntersecting) {
+          if (displayCount < allTraces.length) {
+            // Client-side: show next batch of already-fetched traces
+            const nextCount = Math.min(displayCount + 100, allTraces.length);
+            const sortedTraces = sortTraces(allTraces);
+            setDisplayedTraces(sortedTraces.slice(0, nextCount));
+            setDisplayCount(nextCount);
+          } else if (hasMore && !isLoadingMore) {
+            // Server-side: fetch next page from the API
+            loadMoreTraces();
+          }
         }
       },
       {
@@ -408,7 +467,7 @@ export const AgentTracesPage: React.FC = () => {
     return () => {
       observer.unobserve(currentRef);
     };
-  }, [displayCount, allTraces, sortTraces]);
+  }, [displayCount, allTraces, hasMore, isLoadingMore, loadMoreTraces, sortTraces]);
 
   // Handle trace selection
   const handleSelectTrace = (trace: TraceTableRow) => {
@@ -427,6 +486,16 @@ export const AgentTracesPage: React.FC = () => {
     setFlyoutOpen(false);
     setSelectedTrace(null);
   };
+
+  // Dismiss flyout on Escape key
+  useEffect(() => {
+    if (!flyoutOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') handleCloseFlyout();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [flyoutOpen]);
 
   // Calculate latency distribution for histogram
   const latencyDistribution = useMemo(() => {
@@ -753,13 +822,15 @@ export const AgentTracesPage: React.FC = () => {
                         isSelected={selectedTrace?.traceId === trace.traceId}
                       />
                     ))}
-                    {/* Intersection observer target for lazy loading */}
-                    {displayedTraces.length < allTraces.length && (
+                    {/* Intersection observer target for lazy loading (client-side + server-side) */}
+                    {(displayedTraces.length < allTraces.length || hasMore) && (
                       <tr ref={loadMoreRef} className="hover:bg-transparent border-b transition-colors">
                         <td colSpan={7} className="p-4 align-middle text-center py-8">
                           <div className="flex items-center justify-center gap-2 text-muted-foreground">
-                            <RefreshCw size={16} className="animate-spin" />
-                            <span className="text-sm">Loading more traces...</span>
+                            <RefreshCw size={16} className={isLoadingMore ? 'animate-spin' : ''} />
+                            <span className="text-sm">
+                              {isLoadingMore ? 'Loading more traces from server...' : 'Loading more traces...'}
+                            </span>
                           </div>
                         </td>
                       </tr>
@@ -776,12 +847,13 @@ export const AgentTracesPage: React.FC = () => {
       {flyoutOpen && selectedTrace && (
         <div className="fixed inset-0 z-50 pointer-events-none">
           <ResizablePanelGroup direction="horizontal" className="h-full pointer-events-none">
-            {/* Left invisible panel - allows content below to be interactive */}
-            <ResizablePanel 
+            {/* Left backdrop panel - click to close flyout */}
+            <ResizablePanel
               defaultSize={40}
               minSize={10}
               maxSize={70}
-              className="pointer-events-none"
+              className="pointer-events-auto cursor-default"
+              onClick={handleCloseFlyout}
             />
             
             <ResizableHandle withHandle className="pointer-events-auto" />

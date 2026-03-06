@@ -73,6 +73,20 @@ npx @opensearch-project/agent-health list test-cases # List sample test cases
 npx @opensearch-project/agent-health run -t <test-case> -a <agent>  # Run test case
 npx @opensearch-project/agent-health doctor         # Check configuration
 npx @opensearch-project/agent-health init           # Initialize config files
+
+# Import test cases from JSON and run benchmark
+npx @opensearch-project/agent-health benchmark -f ./test-cases.json -a <agent>
+npx @opensearch-project/agent-health benchmark -f ./test-cases.json -n "My Benchmark" -a <agent>
+
+# Export test cases (produces import-compatible JSON)
+npx @opensearch-project/agent-health export -b <benchmark> -o test-cases.json
+
+# Generate reports (HTML, PDF, JSON)
+npx @opensearch-project/agent-health report -b <benchmark>
+npx @opensearch-project/agent-health report -b <benchmark> -f pdf -o report.pdf
+
+# One-time migration for existing benchmark runs
+npx @opensearch-project/agent-health migrate --dry-run
 ```
 
 **IMPORTANT:** Do not modify the `name` or `version` fields in `package.json`. These are used for publishing the tool via NPX.
@@ -386,7 +400,8 @@ import { getConfig } from '@/lib/config';
 Entry point for NPX package (`bin/cli.js` → `cli/index.ts`):
 - `commands/list.ts`: List agents, test cases, benchmarks, connectors
 - `commands/run.ts`: Run single test case against an agent
-- `commands/benchmark.ts`: Run full benchmark across multiple test cases and agents
+- `commands/benchmark.ts`: Run full benchmark across multiple test cases and agents (supports `-f <file.json>` to import test cases from JSON)
+- `commands/export.ts`: Export benchmark test cases as import-compatible JSON
 - `commands/doctor.ts`: Check configuration and system requirements
 - `commands/init.ts`: Initialize `agent-health.config.ts` configuration file
 - `utils/serverLifecycle.ts`: Playwright-style server auto-start (start if not running, auto-stop on exit)
@@ -430,6 +445,12 @@ Test cases are managed via the UI (Settings > Use Cases) and stored in OpenSearc
 - **Labels**: Unified tagging system (e.g., `category:RCA`, `difficulty:Medium`)
 - **Versions**: Immutable history - each edit creates a new version
 - **expectedOutcomes**: Text descriptions of expected agent behavior (used by judge)
+
+### Storage Adapter Validation
+
+Both the file and OpenSearch storage adapters enforce these invariants:
+- **`testCases.create()`** requires a `name` field — throws `'Test case name is required'` if missing.
+- **`testCases.update()`** throws `'Test case {id} not found'` if the entity doesn't already exist (consistent with `benchmarks.update()` and `runs.update()`). This prevents ghost documents from being silently created via update-as-upsert.
 
 ### Adding New Models
 
@@ -927,12 +948,33 @@ When preparing to raise a PR against the upstream repository (change remote from
    - Memory leak in benchmark timeout handling ([#33](https://github.com/opensearch-project/agent-health/pull/33))
    ```
 
-6. **Push to your fork (change remote name as needed):**
+6. **Run pre-PR checks (REQUIRED - fix all before pushing):**
+   ```bash
+   # Build and test - all must pass
+   npm run build:all && npm run test:all
+
+   # Security scan - no high/critical vulnerabilities allowed
+   npm audit --audit-level=high
+
+   # Verify license headers on new files (CI checks this)
+   # All .ts, .tsx, .js, .jsx, .css files need SPDX header
+   ```
+
+   **Pre-PR Checklist:**
+   - [ ] All commits have DCO signoff (`git log origin/main..HEAD | grep "Signed-off-by"`)
+   - [ ] `CHANGELOG.md` updated under `## [Unreleased]` with PR link
+   - [ ] `npm run build:all` succeeds
+   - [ ] `npm run test:all` passes (unit + integration + e2e)
+   - [ ] `npm audit --audit-level=high` reports no vulnerabilities
+   - [ ] New source files have SPDX license headers
+   - [ ] No secrets committed (`.env`, credentials, tokens)
+
+7. **Push to your fork (change remote name as needed):**
    ```bash
    git push -u fork <branch-name>
    ```
 
-7. **Create PR** via GitHub UI or CLI:
+8. **Create PR** via GitHub UI or CLI:
    ```bash
    gh pr create --repo opensearch-project/agent-health --base main
    ```

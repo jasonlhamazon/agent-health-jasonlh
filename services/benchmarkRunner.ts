@@ -11,6 +11,7 @@ import {
   TestCase,
   EvaluationReport,
   RunConfigInput,
+  RunPerformanceMetrics,
 } from '@/types';
 import {
   getAllTestCasesWithClient,
@@ -27,6 +28,7 @@ import { loadConfigSync } from '@/lib/config/index';
 import { DEFAULT_CONFIG } from '@/lib/constants';
 import { tracePollingManager } from './traces/tracePoller';
 import { getCustomAgents } from '@/server/services/customAgentStore';
+import { debug } from '@/lib/debug';
 import { RunResultStatus } from '@/types';
 
 /**
@@ -47,7 +49,7 @@ function getConfig() {
  */
 export type OnTestCaseCompleteCallback = (
   testCaseId: string,
-  result: { reportId: string; status: RunResultStatus }
+  result: { reportId: string; status: RunResultStatus; error?: string; performanceMetrics?: import('@/types').TestCasePerformanceMetrics }
 ) => Promise<void>;
 
 /**
@@ -116,10 +118,34 @@ function getBedrockModelId(modelKey: string): string {
 }
 
 /**
+ * Run async tasks with bounded concurrency.
+ * Uses a sliding-window approach: starts new tasks as previous ones complete,
+ * maintaining up to `limit` tasks running at once.
+ */
+async function runWithConcurrencyLimit<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<void>,
+  isCancelled?: () => boolean
+): Promise<void> {
+  const executing = new Set<Promise<void>>();
+  for (const item of items) {
+    if (isCancelled?.()) break;
+    const p = fn(item).then(() => { executing.delete(p); });
+    executing.add(p);
+    if (executing.size >= limit) {
+      await Promise.race(executing);
+    }
+  }
+  await Promise.all(executing);
+}
+
+/**
  * Execute a run for a benchmark
  *
  * A run executes a single configuration against all test cases in the benchmark.
  * Results are stored in the evals_runs index via asyncRunStorage.
+ * Supports parallel execution via run.concurrency (default: 1 = sequential).
  */
 export async function executeRun(
   benchmark: Benchmark,
@@ -129,6 +155,10 @@ export async function executeRun(
 ): Promise<BenchmarkRun> {
   const totalTestCases = benchmark.testCaseIds.length;
   const { cancellationToken, client, onTestCaseComplete } = options;
+  const concurrency = run.concurrency ?? 1;
+  const runStartTime = Date.now();
+
+  console.log(`[BenchmarkRunner] Starting run ${run.id} with concurrency=${concurrency} for ${totalTestCases} test cases`);
 
   // Initialize results if empty
   if (!run.results) {
@@ -139,104 +169,176 @@ export async function executeRun(
   const allTestCases = await getAllTestCasesWithClient(client);
   const testCaseMap = new Map(allTestCases.map((tc: any) => [tc.id, tc]));
 
+  // Mutable counters for tracking progress across concurrent tasks.
+  // JS is single-threaded so ++ is atomic within a microtask. With concurrency > 1,
+  // multiple tasks may read the same completedCount in progress events before any
+  // has incremented it — intermediate progress may show duplicate values but the
+  // final tally is always correct. startedCount is incremented synchronously before
+  // each task's first await, providing a unique index per task.
+  let completedCount = 0;
+  let startedCount = 0;
+
+  // Shared throttle signal: when any task hits a rate-limit error,
+  // subsequent task starts wait until this timestamp expires.
+  let throttleUntil = 0;
+
   try {
-    // Iterate through each test case
-    for (let testCaseIndex = 0; testCaseIndex < totalTestCases; testCaseIndex++) {
-      // Check for cancellation before each test case
-      if (cancellationToken?.isCancelled) {
+    // Process each test case with bounded concurrency
+    await runWithConcurrencyLimit(
+      benchmark.testCaseIds,
+      concurrency,
+      async (testCaseId: string) => {
+        // Check for cancellation before starting
+        if (cancellationToken?.isCancelled) {
+          return;
+        }
+
+        // Wait if a sibling task recently hit a rate-limit error
+        const now = Date.now();
+        if (now < throttleUntil) {
+          await new Promise(r => setTimeout(r, throttleUntil - now));
+        }
+
+        const testCase = testCaseMap.get(testCaseId);
+
+        if (!testCase) {
+          const errorMsg = `Test case not found: ${testCaseId}`;
+          console.warn(`[BenchmarkRunner] ${errorMsg}`);
+          run.results[testCaseId] = { reportId: '', status: 'failed', error: errorMsg };
+          completedCount++;
+
+          if (onTestCaseComplete) {
+            onTestCaseComplete(testCaseId, run.results[testCaseId])
+              .catch(err => console.warn(`[BenchmarkRunner] Failed to persist failure progress for ${testCaseId}:`, err.message));
+          }
+          return;
+        }
+
+        // Report progress — this test case is starting
+        startedCount++;
         onProgress({
-          currentTestCaseIndex: testCaseIndex,
+          currentTestCaseIndex: startedCount - 1,
+          startedCount,
+          completedCount,
           totalTestCases,
           currentRunId: run.id,
-          currentTestCaseId: benchmark.testCaseIds[testCaseIndex],
-          status: 'cancelled',
+          currentTestCaseId: testCaseId,
+          status: 'running',
         });
-        break;
-      }
 
-      const testCaseId = benchmark.testCaseIds[testCaseIndex];
-      const testCase = testCaseMap.get(testCaseId);
+        debug('BenchmarkRunner', `[${testCaseId}] Starting evaluation (${completedCount}/${totalTestCases} completed)`);
+        const testCaseStartTime = Date.now();
 
-      if (!testCase) {
-        const errorMsg = `Test case not found: ${testCaseId}`;
-        console.warn(`[BenchmarkRunner] ${errorMsg}`);
-        run.results[testCaseId] = { reportId: '', status: 'failed', error: errorMsg };
-        continue;
-      }
+        // Set status to running
+        run.results[testCaseId] = { reportId: '', status: 'running' };
 
-      // Report progress
+        try {
+          // Build agent config from run configuration
+          const agentConfig = buildAgentConfigForRun(run);
+          const bedrockModelId = getBedrockModelId(run.modelId);
+
+          // Run the evaluation using connector
+          const report = await runEvaluationWithConnector(
+            agentConfig,
+            bedrockModelId,
+            testCase,
+            () => {}, // No debug callback needed
+            { registry: connectorRegistry }
+          );
+
+          // Save the report to OpenSearch and get the actual stored ID
+          const savedReport = await saveReportWithClient(client, report, {
+            experimentId: benchmark.id,
+            experimentRunId: run.id,
+          });
+
+          // Denormalize lastRunAt onto the test case (fire-and-forget)
+          updateTestCaseLastRunAt(client, testCaseId, new Date().toISOString())
+            .catch(err => console.warn(`[BenchmarkRunner] Failed to update lastRunAt for ${testCaseId}:`, err.message));
+
+          // Start trace polling for trace-mode runs (metricsStatus: 'pending')
+          if (savedReport.metricsStatus === 'pending' && savedReport.runId) {
+            startTracePollingForReport(savedReport, testCase, client);
+          }
+
+          // Update result with success - use the actual stored ID
+          run.results[testCaseId] = {
+            reportId: savedReport.id,
+            status: 'completed',
+            performanceMetrics: report.performanceMetrics,
+          };
+
+          completedCount++;
+          const testCaseDuration = Date.now() - testCaseStartTime;
+          debug('BenchmarkRunner', `[${testCaseId}] Completed in ${testCaseDuration}ms (${completedCount}/${totalTestCases} completed)`);
+
+          // Persist progress to OpenSearch (fire-and-forget with logging)
+          if (onTestCaseComplete) {
+            onTestCaseComplete(testCaseId, run.results[testCaseId])
+              .catch(err => console.warn(`[BenchmarkRunner] Failed to persist progress for ${testCaseId}:`, err.message));
+          }
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          const testCaseDuration = Date.now() - testCaseStartTime;
+          debug('BenchmarkRunner', `[${testCaseId}] Failed in ${testCaseDuration}ms: ${errorMsg}`);
+          run.results[testCaseId] = { reportId: '', status: 'failed', error: errorMsg };
+
+          completedCount++;
+
+          // Signal sibling tasks to back off, then wait ourselves
+          if (errorMsg.includes('ThrottlingException') || errorMsg.includes('rate limit') || errorMsg.includes('429')) {
+            throttleUntil = Date.now() + 5000;
+            await new Promise(r => setTimeout(r, 5000));
+          }
+
+          // Persist failure progress to OpenSearch (fire-and-forget with logging)
+          if (onTestCaseComplete) {
+            onTestCaseComplete(testCaseId, run.results[testCaseId])
+              .catch(err => console.warn(`[BenchmarkRunner] Failed to persist failure progress for ${testCaseId}:`, err.message));
+          }
+        }
+      },
+      () => cancellationToken?.isCancelled ?? false
+    );
+
+    // If cancelled, send cancellation progress
+    if (cancellationToken?.isCancelled) {
       onProgress({
-        currentTestCaseIndex: testCaseIndex,
+        currentTestCaseIndex: completedCount,
+        completedCount,
         totalTestCases,
         currentRunId: run.id,
-        currentTestCaseId: testCaseId,
-        status: 'running',
+        currentTestCaseId: benchmark.testCaseIds[Math.min(completedCount, totalTestCases - 1)],
+        status: 'cancelled',
       });
-
-      // Set status to running
-      run.results[testCaseId] = { reportId: '', status: 'running' };
-
-      try {
-        // Build agent config from run configuration
-        const agentConfig = buildAgentConfigForRun(run);
-        const bedrockModelId = getBedrockModelId(run.modelId);
-
-        // Run the evaluation using connector
-        const report = await runEvaluationWithConnector(
-          agentConfig,
-          bedrockModelId,
-          testCase,
-          () => {}, // No debug callback needed
-          { registry: connectorRegistry }
-        );
-
-        // Save the report to OpenSearch and get the actual stored ID
-        const savedReport = await saveReportWithClient(client, report, {
-          experimentId: benchmark.id,
-          experimentRunId: run.id,
-        });
-
-        // Denormalize lastRunAt onto the test case (fire-and-forget)
-        updateTestCaseLastRunAt(client, testCaseId, new Date().toISOString())
-          .catch(err => console.warn(`[BenchmarkRunner] Failed to update lastRunAt for ${testCaseId}:`, err.message));
-
-        // Start trace polling for trace-mode runs (metricsStatus: 'pending')
-        if (savedReport.metricsStatus === 'pending' && savedReport.runId) {
-          startTracePollingForReport(savedReport, testCase, client);
-        }
-
-        // Update result with success - use the actual stored ID
-        run.results[testCaseId] = {
-          reportId: savedReport.id,
-          status: 'completed',
-        };
-
-        // Persist progress to OpenSearch (fire-and-forget with logging)
-        if (onTestCaseComplete) {
-          onTestCaseComplete(testCaseId, run.results[testCaseId])
-            .catch(err => console.warn(`[BenchmarkRunner] Failed to persist progress for ${testCaseId}:`, err.message));
-        }
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        console.error(`[BenchmarkRunner] Error in test case ${testCaseId}:`, errorMsg);
-        run.results[testCaseId] = { reportId: '', status: 'failed', error: errorMsg };
-
-        // Persist failure progress to OpenSearch (fire-and-forget with logging)
-        if (onTestCaseComplete) {
-          onTestCaseComplete(testCaseId, run.results[testCaseId])
-            .catch(err => console.warn(`[BenchmarkRunner] Failed to persist failure progress for ${testCaseId}:`, err.message));
-        }
-      }
     }
 
     // Report final progress
     onProgress({
       currentTestCaseIndex: totalTestCases - 1,
+      completedCount,
       totalTestCases,
       currentRunId: run.id,
       currentTestCaseId: benchmark.testCaseIds[totalTestCases - 1],
       status: 'completed',
     });
+
+    const totalDuration = Date.now() - runStartTime;
+    console.log(`[BenchmarkRunner] Run ${run.id} completed: ${completedCount}/${totalTestCases} test cases in ${totalDuration}ms`);
+
+    // Compute run-level performance metrics
+    const testCaseDurations = Object.values(run.results)
+      .map(r => r.performanceMetrics?.durationMs)
+      .filter((d): d is number => d !== undefined);
+
+    run.performanceMetrics = {
+      durationMs: totalDuration,
+      concurrency,
+      avgTestCaseDurationMs: testCaseDurations.length > 0
+        ? testCaseDurations.reduce((a, b) => a + b, 0) / testCaseDurations.length : 0,
+      maxTestCaseDurationMs: testCaseDurations.length > 0 ? Math.max(...testCaseDurations) : 0,
+      minTestCaseDurationMs: testCaseDurations.length > 0 ? Math.min(...testCaseDurations) : 0,
+    };
 
     return run;
   } catch (error) {
@@ -340,8 +442,13 @@ export async function runSingleUseCase(
 
   const savedReport = await saveReportWithModule(storage, report);
 
-  // Denormalize lastRunAt onto the test case (fire-and-forget)
-  storage.testCases.update(testCase.id, { lastRunAt: new Date().toISOString() } as any)
+  // Denormalize lastRunAt onto the test case (only for persisted test cases)
+  storage.testCases.getById(testCase.id)
+    .then(existing => {
+      if (existing) {
+        return storage.testCases.update(testCase.id, { lastRunAt: new Date().toISOString() } as any);
+      }
+    })
     .catch(err => console.warn(`[BenchmarkRunner] Failed to update lastRunAt for ${testCase.id}:`, err.message));
 
   // Start trace polling for trace-mode runs
@@ -362,17 +469,23 @@ function startTracePollingForReportWithModule(report: EvaluationReport, testCase
     return;
   }
 
+  // Pass agent config to trace poller for hooks
+  const config = getConfig();
+  const allAgents = [...config.agents, ...getCustomAgents()];
+  const agentConfig = allAgents.find(a => a.key === report.agentKey);
+
   tracePollingManager.startPolling(
     report.id,
     report.runId,
     {
       onTracesFound: async (spans, updatedReport) => {
         try {
+          const finalTrajectory = agentConfig?.hooks?.buildTrajectory ? updatedReport.trajectory : report.trajectory;
           // Call the Bedrock judge with the trajectory and expectedOutcomes
           const judgeModelId = report.modelId ? getBedrockModelId(report.modelId) : undefined;
 
           const judgment = await callBedrockJudge(
-            updatedReport.trajectory,
+            finalTrajectory,
             {
               expectedOutcomes: testCase.expectedOutcomes,
               expectedTrajectory: testCase.expectedTrajectory,
@@ -384,6 +497,7 @@ function startTracePollingForReportWithModule(report: EvaluationReport, testCase
 
           // Update report with judge results
           await storage.runs.update(report.id, {
+            trajectory: finalTrajectory,
             metricsStatus: 'ready',
             passFailStatus: judgment.passFailStatus,
             metrics: judgment.metrics,
@@ -413,6 +527,9 @@ function startTracePollingForReportWithModule(report: EvaluationReport, testCase
       onError: (error) => {
         console.error(`[BenchmarkRunner] Trace polling failed for report ${report.id}:`, error instanceof Error ? error.message : error);
       },
+    },
+    {
+      agentConfig, // Pass agent config for hooks
     }
   );
 }
@@ -426,21 +543,28 @@ function startTracePollingForReport(report: EvaluationReport, testCase: TestCase
     return;
   }
 
+  // Pass agent config to trace poller for hooks
+  const config = getConfig();
+  const allAgents = [...config.agents, ...getCustomAgents()];
+  const agentConfig = allAgents.find(a => a.key === report.agentKey);
+
   tracePollingManager.startPolling(
     report.id,
     report.runId,
     {
       onTracesFound: async (spans, updatedReport) => {
         try {
+          const finalTrajectory = agentConfig?.hooks?.buildTrajectory ? updatedReport.trajectory : report.trajectory;
           const judgeModelId = report.modelId ? getBedrockModelId(report.modelId) : undefined;
           const judgment = await callBedrockJudge(
-            updatedReport.trajectory,
+            finalTrajectory,
             { expectedOutcomes: testCase.expectedOutcomes, expectedTrajectory: testCase.expectedTrajectory },
             [],
             () => {},
             judgeModelId
           );
           await updateRunWithClient(client, report.id, {
+            trajectory: finalTrajectory,
             metricsStatus: 'ready',
             passFailStatus: judgment.passFailStatus,
             metrics: judgment.metrics,
@@ -465,6 +589,9 @@ function startTracePollingForReport(report: EvaluationReport, testCase: TestCase
       onError: (error) => {
         console.error(`[BenchmarkRunner] Trace polling failed for report ${report.id}:`, error instanceof Error ? error.message : error);
       },
+    },
+    {
+      agentConfig, // Pass agent config for hooks
     }
   );
 }
