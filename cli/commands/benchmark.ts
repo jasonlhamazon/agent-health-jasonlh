@@ -18,7 +18,7 @@ import Table from 'cli-table3';
 import { readFileSync, writeFileSync } from 'fs';
 import { loadConfig, DEFAULT_SERVER_CONFIG, type ResolvedConfig } from '@/lib/config/index.js';
 import { ensureServer, createServerCleanup, isServerRunning, type EnsureServerResult } from '@/cli/utils/serverLifecycle.js';
-import { ApiClient, ServerError, type BenchmarkExecutionEvent } from '@/cli/utils/apiClient.js';
+import { ApiClient, type BenchmarkExecutionEvent } from '@/cli/utils/apiClient.js';
 import { validateTestCasesArrayJson, type ValidatedTestCaseInput } from '@/lib/testCaseValidation.js';
 import { calculateRunStats, getReportIdsFromRun } from '@/lib/runStats.js';
 import type { AgentConfig, Benchmark, BenchmarkRun, TestCaseRun, EvaluationReport } from '@/types/index.js';
@@ -29,10 +29,8 @@ interface BenchmarkOptions {
   output: string;
   verbose?: boolean;
   export?: string;
-  format: string;
   stopServer?: boolean;
   file?: string;
-  concurrency: string;
 }
 
 interface AgentResults {
@@ -123,8 +121,7 @@ async function runBenchmarkForAgent(
   agent: AgentConfig,
   modelId: string,
   benchmark: Benchmark,
-  verbose: boolean,
-  concurrency?: number
+  verbose: boolean
 ): Promise<AgentResults> {
   const results: AgentResults = {
     agent,
@@ -146,7 +143,6 @@ async function runBenchmarkForAgent(
         name: `CLI Run - ${agent.name}`,
         agentKey: agent.key,
         modelId: modelId,
-        ...(concurrency && concurrency > 1 ? { concurrency } : {}),
       },
       (event: BenchmarkExecutionEvent) => {
         if (event.type === 'started') {
@@ -156,15 +152,10 @@ async function runBenchmarkForAgent(
           const testCaseName = event.currentTestCase?.name || `Test ${current}`;
           spinner.text = `${agent.name}: ${testCaseName} (${current}/${totalTestCases})`;
 
-          if (event.result) {
+          if (verbose && event.result) {
+            // Show result status in verbose mode
             const status = event.result.status === 'completed' ? chalk.green('✓') : chalk.red('✗');
             spinner.text = `${agent.name}: ${testCaseName} ${status} (${current}/${totalTestCases})`;
-
-            // Show per-test-case errors in verbose mode
-            if (verbose && event.result.status === 'failed' && event.result.error) {
-              spinner.info(`${agent.name}: ${testCaseName} ${chalk.red('✗')} - ${event.result.error}`);
-              spinner.start(`${agent.name}: (${current}/${totalTestCases})`);
-            }
           }
         }
       }
@@ -201,7 +192,6 @@ async function runBenchmarkForAgent(
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    const isServerError = error instanceof ServerError;
 
     // Preserve runId even if execution failed (for URL output)
     if (startedRunId) {
@@ -236,56 +226,23 @@ async function runBenchmarkForAgent(
             }
             return results; // Successfully recovered
           }
-
-          // Run failed - show the error from the run if available
-          if (run.status === 'failed') {
-            const runError = run.error || errorMessage;
-            spinner.fail(`${agent.name}: ${chalk.red('Failed')} - ${runError}`);
-            if (stats.passed > 0 || stats.failed > 0) {
-              console.log(chalk.gray(`  Partial results: ${stats.passed} passed, ${stats.failed} failed out of ${stats.total}`));
-            }
-            return results;
-          }
         }
       } catch {
         // Ignore errors during recovery - we'll show the original error below
       }
     }
 
-    // Server-sent errors are definitive failures - show the error directly
-    if (isServerError) {
-      spinner.fail(`${agent.name}: ${chalk.red('Failed')} - ${errorMessage}`);
+    // Check if this was a stream disconnect (server may still be running)
+    const isStreamError = errorMessage.includes('terminated') ||
+                          errorMessage.includes('network') ||
+                          errorMessage.includes('stream') ||
+                          errorMessage.includes('aborted');
+
+    if (isStreamError && startedRunId) {
+      spinner.warn(`${agent.name}: ${chalk.yellow('Stream disconnected')} - server may still be processing`);
+      console.log(chalk.gray(`  Check status: Use the UI to monitor progress`));
     } else {
-      // Check if this was a stream disconnect (server may still be running)
-      const isStreamError = errorMessage.includes('terminated') ||
-                            errorMessage.includes('network') ||
-                            errorMessage.includes('stream') ||
-                            errorMessage.includes('aborted');
-
-      if (isStreamError && startedRunId) {
-        spinner.warn(`${agent.name}: ${chalk.yellow('Stream disconnected')} - server may still be processing`);
-        console.log(chalk.gray(`  Check status: Use the UI to monitor progress`));
-      } else {
-        spinner.fail(`${agent.name}: ${chalk.red('Failed')} - ${errorMessage}`);
-      }
-    }
-
-    // Print helpful hints based on the error
-    const lowerError = errorMessage.toLowerCase();
-    if (lowerError.includes('401') || lowerError.includes('403') || lowerError.includes('unauthorized') || lowerError.includes('forbidden') || lowerError.includes('token') || lowerError.includes('auth')) {
-      console.log(chalk.gray(`  Hint: This looks like an authentication issue. Check your agent-health.config.ts`));
-      console.log(chalk.gray(`        (headers, hooks.beforeRequest, or credentials) and re-run.`));
-    } else if (lowerError.includes('econnrefused') || lowerError.includes('enotfound') || lowerError.includes('connect')) {
-      console.log(chalk.gray(`  Hint: Could not connect to the agent endpoint. Verify the endpoint in agent-health.config.ts`));
-      console.log(chalk.gray(`        is reachable: npx @opensearch-project/agent-health doctor`));
-    } else if (lowerError.includes('not found') || lowerError.includes('agent not found')) {
-      console.log(chalk.gray(`  Hint: Agent key not found. List available agents: npx @opensearch-project/agent-health list agents`));
-    } else if (lowerError.includes('hook') || lowerError.includes('beforerequest')) {
-      console.log(chalk.gray(`  Hint: The beforeRequest hook in agent-health.config.ts threw an error.`));
-      console.log(chalk.gray(`        Check the hook logic and any external services it calls.`));
-    }
-    if (errorMessage !== 'terminated') {
-      console.log(chalk.gray(`  Debug: Run with DEBUG=true for verbose server logs`));
+      spinner.fail(`${agent.name}: ${chalk.red('Failed')} - ${errorMessage}`);
     }
   }
 
@@ -326,70 +283,34 @@ function displaySummaryTable(allResults: AgentResults[], totalTestCases: number)
 }
 
 /**
- * Export results to file
- * When format is 'json', exports raw results directly.
- * For other formats, calls the server report API endpoint.
+ * Export results to JSON file
  */
-async function exportResults(
+function exportResults(
   benchmark: Benchmark,
   allResults: AgentResults[],
-  exportPath: string,
-  format: string,
-  serverBaseUrl: string
-): Promise<void> {
-  if (format !== 'json') {
-    // Use server report API for non-JSON formats
-    const runIds = allResults
-      .map((r) => r.run?.id || r.runId)
-      .filter((id): id is string => !!id);
+  exportPath: string
+): void {
+  const exportData = {
+    benchmark: {
+      id: benchmark.id,
+      name: benchmark.name,
+      testCaseCount: benchmark.testCaseIds.length,
+    },
+    runs: allResults.map((r) => ({
+      agent: { key: r.agent.key, name: r.agent.name },
+      runId: r.run?.id || r.runId,
+      status: r.run?.status,
+      passed: r.passed,
+      failed: r.failed,
+      passRate:
+        benchmark.testCaseIds.length > 0 ? (r.passed / benchmark.testCaseIds.length) * 100 : 0,
+      results: r.run?.results,
+      reports: r.reports,
+    })),
+    exportedAt: new Date().toISOString(),
+  };
 
-    const params = new URLSearchParams({ format });
-    if (runIds.length > 0) {
-      params.set('runIds', runIds.join(','));
-    }
-
-    const url = `${serverBaseUrl}/api/storage/benchmarks/${encodeURIComponent(benchmark.id)}/report?${params.toString()}`;
-    const response = await fetch(url);
-
-    if (!response.ok) {
-      const errorBody = await response.json().catch(() => ({ error: 'Unknown error' }));
-      console.error(chalk.red(`\nExport failed: ${errorBody.error}`));
-      return;
-    }
-
-    const contentType = response.headers.get('content-type') || '';
-    if (contentType.includes('application/pdf')) {
-      const buffer = Buffer.from(await response.arrayBuffer());
-      writeFileSync(exportPath, buffer);
-    } else {
-      const text = await response.text();
-      writeFileSync(exportPath, text);
-    }
-  } else {
-    // Direct JSON export (existing behavior)
-    const exportData = {
-      benchmark: {
-        id: benchmark.id,
-        name: benchmark.name,
-        testCaseCount: benchmark.testCaseIds.length,
-      },
-      runs: allResults.map((r) => ({
-        agent: { key: r.agent.key, name: r.agent.name },
-        runId: r.run?.id || r.runId,
-        status: r.run?.status,
-        passed: r.passed,
-        failed: r.failed,
-        passRate:
-          benchmark.testCaseIds.length > 0 ? (r.passed / benchmark.testCaseIds.length) * 100 : 0,
-        results: r.run?.results,
-        reports: r.reports,
-      })),
-      exportedAt: new Date().toISOString(),
-    };
-
-    writeFileSync(exportPath, JSON.stringify(exportData, null, 2));
-  }
-
+  writeFileSync(exportPath, JSON.stringify(exportData, null, 2));
   console.log(chalk.green(`\nResults exported to: ${exportPath}`));
 }
 
@@ -409,9 +330,7 @@ export function createBenchmarkCommand(): Command {
     )
     .option('-m, --model <id>', 'Model ID (uses agent default if not specified)')
     .option('-o, --output <format>', 'Output format: table, json', 'table')
-    .option('--export <path>', 'Export results to file')
-    .option('--format <type>', 'Report format for --export: json (default), html, pdf', 'json')
-    .option('-c, --concurrency <n>', 'Number of test cases to run in parallel (default: 1)', '1')
+    .option('--export <path>', 'Export results to JSON file')
     .option('-v, --verbose', 'Show detailed output')
     .option('--stop-server', 'Stop the server after benchmark completes (default: keep running)')
     .action(async (options: BenchmarkOptions & { name?: string }) => {
@@ -582,9 +501,6 @@ export function createBenchmarkCommand(): Command {
                 console.log(chalk.gray(`    - ${a.name} (${a.key})`));
               }
               console.log('');
-              console.log(chalk.gray('  To add a custom agent, configure it in agent-health.config.ts'));
-              console.log(chalk.gray('  Generate one with: npx @opensearch-project/agent-health init'));
-              console.log('');
               process.exit(1);
             }
             agents.push(agent);
@@ -593,12 +509,6 @@ export function createBenchmarkCommand(): Command {
         }
 
         console.log('');
-
-        // Parse concurrency option
-        const concurrency = Math.max(1, Math.min(20, parseInt(options.concurrency, 10) || 1));
-        if (concurrency > 1) {
-          console.log(chalk.gray(`  Concurrency: ${concurrency}`));
-        }
 
         // Run benchmark for each agent
         const allResults: AgentResults[] = [];
@@ -610,8 +520,7 @@ export function createBenchmarkCommand(): Command {
             agent,
             modelId,
             benchmark,
-            options.verbose || false,
-            concurrency
+            options.verbose || false
           );
           allResults.push(results);
         }
@@ -636,7 +545,7 @@ export function createBenchmarkCommand(): Command {
 
         // Export if requested
         if (options.export) {
-          await exportResults(benchmark, allResults, options.export, options.format, serverResult.baseUrl);
+          exportResults(benchmark, allResults, options.export);
         }
 
         // Show links to view results

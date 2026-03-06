@@ -4,13 +4,14 @@ on:
   push:
     tags:
       - "*"
+
+permissions:
+  id-token: write  # Required for OIDC
+  contents: read
+
 jobs:
   draft-a-release:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write  # Required for OIDC
-      contents: write
-      issues: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v5
@@ -22,19 +23,10 @@ jobs:
           secret: ${{ github.TOKEN }}
           approvers: ${{ steps.get_approvers.outputs.approvers }}
           minimum-approvals: 2
-          issue-title: 'Release agent-health'
-          issue-body: "Please approve or deny the release of agent_health. **Tag**: ${{ github.ref_name }}  **Commit**: ${{ github.sha }}"
+          issue-title: 'Release opensearch-benchmark'
+          issue-body: "Please approve or deny the release of opensearch-benchmark. **Tag**: ${{ github.ref_name }}  **Commit**: ${{ github.sha }}"
           exclude-workflow-initiator-as-approver: true
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
       - run: npm ci
       - run: npm run build --if-present
       - run: npm test
       - run: npm publish
-      - name: Draft a release
-        uses: softprops/action-gh-release@v1
-        with:
-          draft: false
-          generate_release_notes: true

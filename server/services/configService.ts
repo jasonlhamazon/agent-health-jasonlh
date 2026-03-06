@@ -6,24 +6,26 @@
 /**
  * Configuration Service
  *
- * Manages server-side configuration stored in agent-health.config.json.
+ * Manages server-side configuration stored in agent-health.yaml.
  * Provides secure credential storage without browser exposure.
- *
- * Shares the same JSON file as customAgentStore.ts — each module
- * owns its own top-level keys (storage, observability vs customAgents).
- * Safe because Node.js is single-threaded and both use synchronous fs calls.
  */
 
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+import yaml from 'js-yaml';
 import { debug } from '../../lib/debug.js';
 import type { StorageClusterConfig, ObservabilityClusterConfig } from '../../types/index.js';
 
-// Same filename used by customAgentStore.ts
-const CONFIG_FILENAME = 'agent-health.config.json';
+// ESM equivalent of __dirname
+const currentFilename = fileURLToPath(import.meta.url);
+const currentDirname = path.dirname(currentFilename);
 
-// Type for the config file sections owned by this module
-interface ConfigFileDataSources {
+// Config file path - at project root
+const CONFIG_FILE_NAME = 'agent-health.yaml';
+
+// Type for the full config file structure
+interface ConfigFile {
   storage?: {
     endpoint: string;
     username?: string;
@@ -43,22 +45,17 @@ interface ConfigFileDataSources {
   };
 }
 
-// Config status returned to frontend (no raw credentials — username is safe to expose,
-// password is indicated only as a boolean so the UI can show placeholder dots)
+// Config status returned to frontend (no credentials)
 export interface ConfigStatus {
   storage: {
     configured: boolean;
     source: 'file' | 'environment' | 'none';
-    endpoint?: string;
-    username?: string;    // Safe to return; lets the form pre-fill the username
-    hasPassword?: boolean; // True when a password is stored; never return the value itself
+    endpoint?: string;  // Show endpoint for verification, never credentials
   };
   observability: {
     configured: boolean;
     source: 'file' | 'environment' | 'none';
     endpoint?: string;
-    username?: string;
-    hasPassword?: boolean;
     indexes?: {
       traces?: string;
       logs?: string;
@@ -68,45 +65,61 @@ export interface ConfigStatus {
 }
 
 /**
- * Get the config file path.
- * Checks CWD first, then falls back to CWD as default write location.
+ * Get the config file path
+ * Checks multiple locations in order: CWD, then project root
  */
 function getConfigFilePath(): string {
-  const cwdPath = path.join(process.cwd(), CONFIG_FILENAME);
-  return cwdPath;
+  // First check current working directory
+  const cwdPath = path.join(process.cwd(), CONFIG_FILE_NAME);
+  if (fs.existsSync(cwdPath)) {
+    return cwdPath;
+  }
+
+  // Then check the directory where this file is located (project root from server/services/)
+  const projectRootPath = path.join(currentDirname, '..', '..', CONFIG_FILE_NAME);
+  return projectRootPath;
 }
 
 /**
- * Read the full JSON config from disk.
- * Returns `{}` when file doesn't exist (safe to create new).
- * Returns `null` when file exists but read/parse fails (unsafe to write — would clobber).
+ * Read and parse the config file
  */
-function readConfigFromDisk(): Record<string, unknown> | null {
+function readConfigFile(): ConfigFile | null {
+  const configPath = getConfigFilePath();
+
+  if (!fs.existsSync(configPath)) {
+    return null;
+  }
+
   try {
-    const filePath = getConfigFilePath();
-    if (!fs.existsSync(filePath)) return {};
-    const raw = fs.readFileSync(filePath, 'utf-8');
-    const parsed = JSON.parse(raw);
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      console.error('[ConfigService] Config file contains non-object content, refusing to overwrite');
-      return null;
-    }
-    return parsed as Record<string, unknown>;
-  } catch (err) {
-    console.error('[ConfigService] Failed to read config file:', err);
+    const content = fs.readFileSync(configPath, 'utf8');
+    const config = yaml.load(content) as ConfigFile;
+    return config;
+  } catch (error) {
+    console.error('[ConfigService] Failed to read config file:', error);
     return null;
   }
 }
 
 /**
- * Write config back to disk, preserving all sibling keys.
- * Same pattern as customAgentStore.ts.
+ * Write config to the config file
  */
-function writeConfigToDisk(config: Record<string, unknown>): void {
+function writeConfigFile(config: ConfigFile): void {
+  const configPath = getConfigFilePath();
+
+  // If the file doesn't exist, create it at CWD
+  const targetPath = fs.existsSync(configPath)
+    ? configPath
+    : path.join(process.cwd(), CONFIG_FILE_NAME);
+
   try {
-    const filePath = getConfigFilePath();
-    fs.writeFileSync(filePath, JSON.stringify(config, null, 2) + '\n', 'utf-8');
-    debug('ConfigService', `Config saved to ${filePath}`);
+    const content = yaml.dump(config, {
+      indent: 2,
+      lineWidth: -1,  // Don't wrap lines
+      quotingType: '"',
+      forceQuotes: false,
+    });
+    fs.writeFileSync(targetPath, content, 'utf8');
+    debug('ConfigService', `Config saved to ${targetPath}`);
   } catch (error) {
     console.error('[ConfigService] Failed to write config file:', error);
     throw error;
@@ -122,7 +135,7 @@ function writeConfigToDisk(config: Record<string, unknown>): void {
  * Returns null if not configured in file
  */
 export function getStorageConfigFromFile(): StorageClusterConfig | null {
-  const config = readConfigFromDisk() as ConfigFileDataSources | null;
+  const config = readConfigFile();
 
   if (!config?.storage?.endpoint) {
     return null;
@@ -140,49 +153,42 @@ export function getStorageConfigFromFile(): StorageClusterConfig | null {
  * Save storage configuration to file
  */
 export function saveStorageConfig(storageConfig: StorageClusterConfig): void {
-  const existing = readConfigFromDisk();
-  if (existing === null) {
-    throw new Error('Cannot save storage config: existing config file is unreadable or corrupt');
-  }
-  const existingStorage = (existing.storage as any) || {};
+  const existingConfig = readConfigFile() || {};
 
-  // Use ?? so that an absent/undefined field in the incoming payload falls back
-  // to whatever is already stored. The form converts sentinel and empty values
-  // to undefined before sending. Note: if called directly with password: "",
-  // the empty string passes through ?? but is omitted by the falsy spread
-  // below, effectively clearing the stored credential. This is intentional.
-  const resolvedUsername = storageConfig.username ?? existingStorage.username;
-  const resolvedPassword = storageConfig.password ?? existingStorage.password;
-
-  existing.storage = {
-    endpoint: storageConfig.endpoint,
-    ...(resolvedUsername && { username: resolvedUsername }),
-    ...(resolvedPassword && { password: resolvedPassword }),
-    ...(storageConfig.tlsSkipVerify !== undefined && { tlsSkipVerify: storageConfig.tlsSkipVerify }),
+  const updatedConfig: ConfigFile = {
+    ...existingConfig,
+    storage: {
+      endpoint: storageConfig.endpoint,
+      ...(storageConfig.username && { username: storageConfig.username }),
+      ...(storageConfig.password && { password: storageConfig.password }),
+      ...(storageConfig.tlsSkipVerify !== undefined && { tlsSkipVerify: storageConfig.tlsSkipVerify }),
+    },
   };
 
-  writeConfigToDisk(existing);
+  writeConfigFile(updatedConfig);
 }
 
 /**
  * Clear storage configuration from file
  */
 export function clearStorageConfig(): void {
-  const existing = readConfigFromDisk();
-  if (existing === null) {
-    throw new Error('Cannot clear storage config: existing config file is unreadable or corrupt');
+  const existingConfig = readConfigFile();
+
+  if (!existingConfig) {
+    return;
   }
-  delete existing.storage;
+
+  delete existingConfig.storage;
 
   // If config is now empty, delete the file
-  if (Object.keys(existing).length === 0) {
-    const filePath = getConfigFilePath();
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+  if (Object.keys(existingConfig).length === 0) {
+    const configPath = getConfigFilePath();
+    if (fs.existsSync(configPath)) {
+      fs.unlinkSync(configPath);
       debug('ConfigService', 'Config file deleted (empty)');
     }
   } else {
-    writeConfigToDisk(existing);
+    writeConfigFile(existingConfig);
   }
 }
 
@@ -195,7 +201,7 @@ export function clearStorageConfig(): void {
  * Returns null if not configured in file
  */
 export function getObservabilityConfigFromFile(): ObservabilityClusterConfig | null {
-  const config = readConfigFromDisk() as ConfigFileDataSources | null;
+  const config = readConfigFile();
 
   if (!config?.observability?.endpoint) {
     return null;
@@ -214,49 +220,45 @@ export function getObservabilityConfigFromFile(): ObservabilityClusterConfig | n
  * Save observability configuration to file
  */
 export function saveObservabilityConfig(obsConfig: ObservabilityClusterConfig): void {
-  const existing = readConfigFromDisk();
-  if (existing === null) {
-    throw new Error('Cannot save observability config: existing config file is unreadable or corrupt');
-  }
-  const existingObs = (existing.observability as any) || {};
+  const existingConfig = readConfigFile() || {};
 
-  // Use ?? so that an absent/undefined field in the incoming payload falls back
-  // to whatever is already stored.
-  const resolvedUsername = obsConfig.username ?? existingObs.username;
-  const resolvedPassword = obsConfig.password ?? existingObs.password;
-
-  existing.observability = {
-    endpoint: obsConfig.endpoint,
-    ...(resolvedUsername && { username: resolvedUsername }),
-    ...(resolvedPassword && { password: resolvedPassword }),
-    ...(obsConfig.tlsSkipVerify !== undefined && { tlsSkipVerify: obsConfig.tlsSkipVerify }),
-    ...(obsConfig.indexes && Object.keys(obsConfig.indexes).length > 0 && {
-      indexes: obsConfig.indexes,
-    }),
+  const updatedConfig: ConfigFile = {
+    ...existingConfig,
+    observability: {
+      endpoint: obsConfig.endpoint,
+      ...(obsConfig.username && { username: obsConfig.username }),
+      ...(obsConfig.password && { password: obsConfig.password }),
+      ...(obsConfig.tlsSkipVerify !== undefined && { tlsSkipVerify: obsConfig.tlsSkipVerify }),
+      ...(obsConfig.indexes && Object.keys(obsConfig.indexes).length > 0 && {
+        indexes: obsConfig.indexes,
+      }),
+    },
   };
 
-  writeConfigToDisk(existing);
+  writeConfigFile(updatedConfig);
 }
 
 /**
  * Clear observability configuration from file
  */
 export function clearObservabilityConfig(): void {
-  const existing = readConfigFromDisk();
-  if (existing === null) {
-    throw new Error('Cannot clear observability config: existing config file is unreadable or corrupt');
+  const existingConfig = readConfigFile();
+
+  if (!existingConfig) {
+    return;
   }
-  delete existing.observability;
+
+  delete existingConfig.observability;
 
   // If config is now empty, delete the file
-  if (Object.keys(existing).length === 0) {
-    const filePath = getConfigFilePath();
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+  if (Object.keys(existingConfig).length === 0) {
+    const configPath = getConfigFilePath();
+    if (fs.existsSync(configPath)) {
+      fs.unlinkSync(configPath);
       debug('ConfigService', 'Config file deleted (empty)');
     }
   } else {
-    writeConfigToDisk(existing);
+    writeConfigFile(existingConfig);
   }
 }
 
@@ -269,15 +271,15 @@ export function clearObservabilityConfig(): void {
  * Never exposes credentials - only shows source and endpoint
  */
 export function getConfigStatus(): ConfigStatus {
-  const config = readConfigFromDisk() as ConfigFileDataSources | null;
+  const fileConfig = readConfigFile();
 
   // Determine storage config source
   let storageSource: 'file' | 'environment' | 'none' = 'none';
   let storageEndpoint: string | undefined;
 
-  if (config?.storage?.endpoint) {
+  if (fileConfig?.storage?.endpoint) {
     storageSource = 'file';
-    storageEndpoint = config.storage.endpoint;
+    storageEndpoint = fileConfig.storage.endpoint;
   } else if (process.env.OPENSEARCH_STORAGE_ENDPOINT) {
     storageSource = 'environment';
     storageEndpoint = process.env.OPENSEARCH_STORAGE_ENDPOINT;
@@ -288,10 +290,10 @@ export function getConfigStatus(): ConfigStatus {
   let obsEndpoint: string | undefined;
   let obsIndexes: ConfigStatus['observability']['indexes'];
 
-  if (config?.observability?.endpoint) {
+  if (fileConfig?.observability?.endpoint) {
     obsSource = 'file';
-    obsEndpoint = config.observability.endpoint;
-    obsIndexes = config.observability.indexes;
+    obsEndpoint = fileConfig.observability.endpoint;
+    obsIndexes = fileConfig.observability.indexes;
   } else if (process.env.OPENSEARCH_LOGS_ENDPOINT) {
     obsSource = 'environment';
     obsEndpoint = process.env.OPENSEARCH_LOGS_ENDPOINT;
@@ -306,23 +308,11 @@ export function getConfigStatus(): ConfigStatus {
       configured: storageSource !== 'none',
       source: storageSource,
       endpoint: storageEndpoint,
-      username: storageSource === 'file'
-        ? config?.storage?.username
-        : process.env.OPENSEARCH_STORAGE_USERNAME,
-      hasPassword: storageSource === 'file'
-        ? Boolean(config?.storage?.password)
-        : Boolean(process.env.OPENSEARCH_STORAGE_PASSWORD),
     },
     observability: {
       configured: obsSource !== 'none',
       source: obsSource,
       endpoint: obsEndpoint,
-      username: obsSource === 'file'
-        ? config?.observability?.username
-        : process.env.OPENSEARCH_LOGS_USERNAME,
-      hasPassword: obsSource === 'file'
-        ? Boolean(config?.observability?.password)
-        : Boolean(process.env.OPENSEARCH_LOGS_PASSWORD),
       indexes: obsIndexes,
     },
   };
@@ -332,6 +322,6 @@ export function getConfigStatus(): ConfigStatus {
  * Check if config file exists
  */
 export function configFileExists(): boolean {
-  const filePath = getConfigFilePath();
-  return fs.existsSync(filePath);
+  const configPath = getConfigFilePath();
+  return fs.existsSync(configPath);
 }

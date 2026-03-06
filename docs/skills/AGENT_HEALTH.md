@@ -74,7 +74,7 @@ Alternatively, pass `--env-file <path>` to load a `.env` file from a different l
 After configuring your environment, verify everything is set up correctly:
 
 ```bash
-npx @opensearch-project/agent-health doctor
+npx @goyamegh/agent-health doctor
 ```
 
 This checks OpenSearch connectivity, AWS credentials, and Bedrock access. Fix any reported issues before proceeding.
@@ -85,30 +85,21 @@ This checks OpenSearch connectivity, AWS credentials, and Bedrock access. Fix an
 
 ```bash
 # Verify setup
-npx @opensearch-project/agent-health doctor --output json
+npx @goyamegh/agent-health doctor --output json
 
 # Generate config files
-npx @opensearch-project/agent-health init
+npx @goyamegh/agent-health init
 
 # List available resources
-npx @opensearch-project/agent-health list agents --output json
-npx @opensearch-project/agent-health list test-cases --output json
-npx @opensearch-project/agent-health list benchmarks --output json
+npx @goyamegh/agent-health list agents --output json
+npx @goyamegh/agent-health list test-cases --output json
+npx @goyamegh/agent-health list benchmarks --output json
 
 # Run single test case
-npx @opensearch-project/agent-health run -t <test-case-id> -a <agent-key> --output json
+npx @goyamegh/agent-health run -t <test-case-id> -a <agent-key> --output json
 
 # Run full benchmark with export
-npx @opensearch-project/agent-health benchmark -n <benchmark-name> -a <agent-key> --export results.json
-
-# Import test cases from JSON file and run benchmark
-npx @opensearch-project/agent-health benchmark -f ./test-cases.json -a <agent-key>
-
-# Import with a custom benchmark name
-npx @opensearch-project/agent-health benchmark -f ./test-cases.json -n "My Benchmark" -a <agent-key>
-
-# Export test cases from a benchmark (produces import-compatible JSON)
-npx @opensearch-project/agent-health export -b <benchmark-name> -o test-cases.json
+npx @goyamegh/agent-health benchmark -n <benchmark-name> -a <agent-key> --export results.json
 ```
 
 ---
@@ -117,13 +108,13 @@ npx @opensearch-project/agent-health export -b <benchmark-name> -o test-cases.js
 
 ### Step 0: Verify Setup
 ```bash
-npx @opensearch-project/agent-health doctor --output json
+npx @goyamegh/agent-health doctor --output json
 ```
 Confirm all checks pass before proceeding. Fix any issues reported.
 
 ### Step 1: Baseline Evaluation
 ```bash
-npx @opensearch-project/agent-health benchmark -n "My Benchmark" -a my-agent --export baseline.json
+npx @goyamegh/agent-health benchmark -n "My Benchmark" -a my-agent --export baseline.json
 ```
 
 ### Step 2: Analyze Failures
@@ -149,7 +140,7 @@ Read the agent's code and implement the recommendation.
 
 ### Step 4: Verify Fix
 ```bash
-npx @opensearch-project/agent-health benchmark -n "My Benchmark" -a my-agent --export after-fix.json
+npx @goyamegh/agent-health benchmark -n "My Benchmark" -a my-agent --export after-fix.json
 ```
 
 Compare `passRate` between baseline and after-fix.

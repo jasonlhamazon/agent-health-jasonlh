@@ -16,8 +16,6 @@ interface JudgeResult {
   metrics: EvaluationMetrics;
   llmJudgeReasoning: string;
   improvementStrategies: ImprovementStrategy[];
-  judgeDurationMs?: number;
-  judgeAttempts?: number;
 }
 
 /**
@@ -59,8 +57,6 @@ export async function callBedrockJudge(
   console.log('[BedrockJudge] Expected trajectory steps:', expected.expectedTrajectory?.length || 0);
   console.log('[BedrockJudge] Logs provided:', logs?.length || 0);
   console.log('[BedrockJudge] Model:', modelId || '(using default)');
-
-  const judgeStartTime = Date.now();
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -105,8 +101,6 @@ export async function callBedrockJudge(
         metrics: result.metrics,
         llmJudgeReasoning: result.llmJudgeReasoning,
         improvementStrategies: result.improvementStrategies || [],
-        judgeDurationMs: Date.now() - judgeStartTime,
-        judgeAttempts: attempt,
       };
     } catch (error) {
       const isLastAttempt = attempt === maxRetries;

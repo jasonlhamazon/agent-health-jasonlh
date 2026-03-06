@@ -159,7 +159,7 @@ describe('customAgentStore', () => {
       expect(parsed.customAgents).toHaveLength(1);
     });
 
-    it('does not delete or write the file when agents are empty and no other keys exist', () => {
+    it('deletes the file when agents are empty and no other keys exist', () => {
       // First add an agent (this writes to "disk")
       addCustomAgent(makeAgent('z', 'Z', 'http://z'));
       jest.clearAllMocks();
@@ -172,10 +172,7 @@ describe('customAgentStore', () => {
 
       removeCustomAgent('z');
 
-      // File lifecycle is managed by configService.ts — customAgentStore must not delete
-      expect(mockUnlinkSync).not.toHaveBeenCalled();
-      // Nothing left to write, so writeFileSync should not be called either
-      expect(mockWriteFileSync).not.toHaveBeenCalled();
+      expect(mockUnlinkSync).toHaveBeenCalled();
     });
 
     it('keeps the file (without customAgents) when other keys remain', () => {
@@ -201,34 +198,6 @@ describe('customAgentStore', () => {
       const parsed = JSON.parse(content);
       expect(parsed.theme).toBe('dark');
       expect(parsed.customAgents).toBeUndefined();
-    });
-
-    it('skips write when existing config file is unreadable (corrupt JSON)', () => {
-      // First add an agent to the in-memory store
-      addCustomAgent(makeAgent('mem-agent', 'Memory Agent', 'http://mem'));
-      jest.clearAllMocks();
-
-      // Now simulate a corrupt config file for the next saveToDisk call
-      mockExistsSync.mockReturnValue(true);
-      mockReadFileSync.mockReturnValue('NOT VALID JSON {{{');
-
-      // Adding another agent triggers saveToDisk, which should skip the write
-      addCustomAgent(makeAgent('another', 'Another', 'http://another'));
-
-      expect(mockWriteFileSync).not.toHaveBeenCalled();
-      // Agent is still in memory despite the write being skipped
-      expect(getCustomAgents().find((a) => a.key === 'another')).toBeDefined();
-    });
-
-    it('skips write when existing config file contains a JSON array', () => {
-      mockExistsSync.mockReturnValue(true);
-      mockReadFileSync.mockReturnValue('["not", "an", "object"]');
-
-      addCustomAgent(makeAgent('arr-test', 'Array Test', 'http://arr'));
-
-      expect(mockWriteFileSync).not.toHaveBeenCalled();
-      // Agent is still in memory
-      expect(getCustomAgents().find((a) => a.key === 'arr-test')).toBeDefined();
     });
 
     it('logs error but does not throw on write failure', () => {

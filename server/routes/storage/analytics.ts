@@ -5,38 +5,44 @@
 
 /**
  * Analytics Routes - Read-only queries and aggregations
- *
- * Storage-backend agnostic: uses IStorageModule adapter (file or OpenSearch).
  */
 
 import { Router, Request, Response } from 'express';
-import { getStorageModule } from '../../adapters/index.js';
+import { isStorageAvailable, requireStorageClient, INDEXES } from '../../middleware/storageClient.js';
 
 const router = Router();
+const INDEX = INDEXES.analytics;
 
 // GET /api/storage/analytics - Query with filters
 router.get('/api/storage/analytics', async (req: Request, res: Response) => {
   try {
-    const storage = getStorageModule();
-    if (!storage.isConfigured()) {
+    if (!isStorageAvailable(req)) {
       return res.json({ records: [], total: 0 });
     }
 
     const { experimentId, testCaseId, agentId, modelId, passFailStatus, size = '1000', from = '0' } = req.query;
 
-    const filters: Record<string, unknown> = {};
-    if (experimentId) filters.experimentId = experimentId;
-    if (testCaseId) filters.testCaseId = testCaseId;
-    if (agentId) filters.agentId = agentId;
-    if (modelId) filters.modelId = modelId;
-    if (passFailStatus) filters.passFailStatus = passFailStatus;
+    const must: any[] = [];
+    if (experimentId) must.push({ term: { experimentId } });
+    if (testCaseId) must.push({ term: { testCaseId } });
+    if (agentId) must.push({ term: { agentId } });
+    if (modelId) must.push({ term: { modelId } });
+    if (passFailStatus) must.push({ term: { passFailStatus } });
 
-    const result = await storage.analytics.query(filters, {
-      size: parseInt(size as string),
-      from: parseInt(from as string),
+    const client = requireStorageClient(req);
+    const result = await client.search({
+      index: INDEX,
+      body: {
+        size: parseInt(size as string),
+        from: parseInt(from as string),
+        sort: [{ createdAt: { order: 'desc' } }],
+        query: must.length > 0 ? { bool: { must } } : { match_all: {} },
+      },
     });
 
-    res.json({ records: result.items, total: result.total });
+    const records = result.body.hits?.hits?.map((hit: any) => hit._source) || [];
+    const total = (result.body.hits?.total as any)?.value ?? records.length;
+    res.json({ records, total });
   } catch (error: any) {
     console.error('[StorageAPI] Analytics query failed:', error.message);
     res.status(500).json({ error: error.message });
@@ -46,18 +52,53 @@ router.get('/api/storage/analytics', async (req: Request, res: Response) => {
 // GET /api/storage/analytics/aggregations - Aggregated metrics
 router.get('/api/storage/analytics/aggregations', async (req: Request, res: Response) => {
   try {
-    const storage = getStorageModule();
-    if (!storage.isConfigured()) {
+    if (!isStorageAvailable(req)) {
       return res.json({ aggregations: [], groupBy: req.query.groupBy || 'agentId' });
     }
 
     const { experimentId, groupBy = 'agentId' } = req.query;
-    const result = await storage.analytics.aggregations(
-      experimentId as string | undefined,
-      groupBy as string,
-    );
 
-    res.json(result);
+    const must: any[] = [];
+    if (experimentId) must.push({ term: { experimentId } });
+
+    const client = requireStorageClient(req);
+    const result = await client.search({
+      index: INDEX,
+      body: {
+        size: 0,
+        query: must.length > 0 ? { bool: { must } } : { match_all: {} },
+        aggs: {
+          groups: {
+            terms: { field: groupBy as string, size: 100 },
+            aggs: {
+              avg_accuracy: { avg: { field: 'metric_accuracy' } },
+              avg_faithfulness: { avg: { field: 'metric_faithfulness' } },
+              avg_latency: { avg: { field: 'metric_latency_score' } },
+              avg_trajectory: { avg: { field: 'metric_trajectory_alignment_score' } },
+              pass_count: { filter: { term: { passFailStatus: 'passed' } } },
+              fail_count: { filter: { term: { passFailStatus: 'failed' } } },
+              total_runs: { value_count: { field: 'runId' } },
+            },
+          },
+        },
+      },
+    });
+
+    const buckets = (result.body.aggregations?.groups as any)?.buckets || [];
+    const aggregations = buckets.map((bucket: any) => ({
+      key: bucket.key,
+      metrics: {
+        avgAccuracy: bucket.avg_accuracy?.value,
+        avgFaithfulness: bucket.avg_faithfulness?.value,
+        avgLatency: bucket.avg_latency?.value,
+        avgTrajectory: bucket.avg_trajectory?.value,
+      },
+      passCount: bucket.pass_count?.doc_count || 0,
+      failCount: bucket.fail_count?.doc_count || 0,
+      totalRuns: bucket.total_runs?.value || 0,
+    }));
+
+    res.json({ aggregations, groupBy });
   } catch (error: any) {
     console.error('[StorageAPI] Analytics aggregations failed:', error.message);
     res.status(500).json({ error: error.message });
@@ -67,16 +108,39 @@ router.get('/api/storage/analytics/aggregations', async (req: Request, res: Resp
 // POST /api/storage/analytics/search - Complex search with custom aggs
 router.post('/api/storage/analytics/search', async (req: Request, res: Response) => {
   try {
-    const storage = getStorageModule();
-    if (!storage.isConfigured()) {
+    if (!isStorageAvailable(req)) {
       return res.json({ records: [], total: 0, aggregations: {} });
     }
 
-    const { filters, size = 1000, from = 0 } = req.body;
+    const { filters, aggs, size = 1000, from = 0 } = req.body;
 
-    const result = await storage.analytics.query(filters || {}, { size, from });
+    const body: any = {
+      size, from,
+      sort: [{ createdAt: { order: 'desc' } }],
+    };
 
-    res.json({ records: result.items, total: result.total, aggregations: {} });
+    if (filters && Object.keys(filters).length > 0) {
+      const must: any[] = [];
+      for (const [field, value] of Object.entries(filters)) {
+        if (Array.isArray(value)) {
+          must.push({ terms: { [field]: value } });
+        } else {
+          must.push({ term: { [field]: value } });
+        }
+      }
+      body.query = { bool: { must } };
+    } else {
+      body.query = { match_all: {} };
+    }
+
+    if (aggs) body.aggs = aggs;
+
+    const client = requireStorageClient(req);
+    const result = await client.search({ index: INDEX, body });
+
+    const records = result.body.hits?.hits?.map((hit: any) => hit._source) || [];
+    const total = (result.body.hits?.total as any)?.value ?? 0;
+    res.json({ records, total, aggregations: result.body.aggregations || {} });
   } catch (error: any) {
     console.error('[StorageAPI] Analytics search failed:', error.message);
     res.status(500).json({ error: error.message });

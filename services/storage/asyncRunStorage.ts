@@ -44,7 +44,6 @@ export interface GetReportsOptions {
   offset?: number;
   sortBy?: 'timestamp' | 'accuracy';
   order?: 'asc' | 'desc';
-  fields?: string[]; // NEW: Optional field projection for payload optimization
 }
 
 /**
@@ -102,7 +101,7 @@ function toTestCaseRun(stored: StorageRun): TestCaseRun {
       tags: ann.tags,
       author: ann.author,
     })),
-    runId: stored.traceId || (stored as any).runId,
+    runId: stored.traceId,
     rawEvents: stored.rawEvents as any[] | undefined,
     logs: (stored.logs || []) as OpenSearchLog[],
     improvementStrategies: stored.improvementStrategies as any[] | undefined,
@@ -207,15 +206,8 @@ class AsyncRunStorage {
    * Get all reports across all test cases
    */
   async getAllReports(options: GetReportsOptions = {}): Promise<EvaluationReport[]> {
-    const { limit = 100, offset = 0, fields } = options;
-
-    // Build query options with optional field projection
-    const queryOptions: any = { size: limit, from: offset };
-    if (fields && fields.length > 0) {
-      queryOptions._source = fields;
-    }
-
-    const result = await opensearchRuns.getAll(queryOptions);
+    const { limit = 100, offset = 0 } = options;
+    const result = await opensearchRuns.getAll({ size: limit, from: offset });
     return result.runs.map(toTestCaseRun);
   }
 

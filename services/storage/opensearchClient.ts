@@ -69,7 +69,6 @@ export interface StorageTestCase {
   author?: string;
   createdAt: string;
   updatedAt: string;
-  lastRunAt?: string;
 }
 
 export interface StorageBenchmarkRunConfig {
@@ -82,9 +81,8 @@ export interface StorageBenchmarkRunConfig {
   headers?: Record<string, string>;
   iterationCount?: number;
   createdAt: string;
-  results?: Record<string, { reportId: string; status: string; error?: string }>;
+  results?: Record<string, { reportId: string; status: string }>;
   status?: string;
-  error?: string;
   stats?: { passed: number; failed: number; pending: number; total: number };
 }
 

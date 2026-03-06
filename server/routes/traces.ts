@@ -16,7 +16,6 @@ import {
   getSampleSpansForRunIds,
   getSampleSpansByTraceId,
   getAllSampleTraceSpans,
-  getAllSampleTraceSpansWithRecentTimestamps,
   isSampleTraceId,
 } from '../../cli/demo/sampleTraces.js';
 import { resolveObservabilityConfig, DEFAULT_OTEL_INDEXES } from '../middleware/dataSourceConfig.js';
@@ -29,7 +28,7 @@ const router = Router();
  */
 router.post('/api/traces', async (req: Request, res: Response) => {
   try {
-    const { traceId, runIds, startTime, endTime, size = 100, serviceName, textSearch, cursor } = req.body;
+    const { traceId, runIds, startTime, endTime, size = 500, serviceName, textSearch } = req.body;
 
     // Validate request - allow time range queries for live tailing
     const hasTimeRange = startTime || endTime;
@@ -53,8 +52,6 @@ router.post('/api/traces', async (req: Request, res: Response) => {
     // 2. Query live OpenSearch traces (independent of sample logic)
     let realSpans: Span[] = [];
     let warning: string | undefined;
-    let nextCursor: string | null = null;
-    let hasMore: boolean = false;
     const config = resolveObservabilityConfig(req);
 
     if (config && (traceId || (runIds && runIds.length > 0) || startTime || endTime)) {
@@ -62,7 +59,7 @@ router.post('/api/traces', async (req: Request, res: Response) => {
         const indexPattern = config.indexes?.traces || DEFAULT_OTEL_INDEXES.traces;
 
         const result = await fetchTraces(
-          { traceId, runIds, startTime, endTime, size, serviceName, textSearch, cursor },
+          { traceId, runIds, startTime, endTime, size, serviceName, textSearch },
           {
             endpoint: config.endpoint,
             username: config.username,
@@ -73,46 +70,18 @@ router.post('/api/traces', async (req: Request, res: Response) => {
         );
 
         realSpans = (result.spans || []) as Span[];
-        nextCursor = result.nextCursor || null;
-        hasMore = result.hasMore || false;
       } catch (e: any) {
         console.warn('[TracesAPI] OpenSearch query failed:', e.message);
         warning = e.message;
       }
     } else if (!config) {
-      // No observability cluster configured
-      if (hasTimeRange && !hasIdFilter) {
-        // Time-range browse query: show demo traces as fallback
-        sampleSpans = getAllSampleTraceSpansWithRecentTimestamps();
-
-        if (serviceName) {
-          sampleSpans = sampleSpans.filter(
-            s => s.attributes['service.name'] === serviceName
-          );
-        }
-        if (textSearch) {
-          const searchLower = textSearch.toLowerCase();
-          sampleSpans = sampleSpans.filter(s => {
-            if (s.name.toLowerCase().includes(searchLower)) return true;
-            return Object.values(s.attributes).some(
-              v => typeof v === 'string' && v.toLowerCase().includes(searchLower)
-            );
-          });
-        }
-      }
       warning = 'Observability data source not configured';
     }
 
     // Merge: sample spans first, then real spans
     const allSpans = [...sampleSpans, ...realSpans];
 
-    res.json({
-      spans: allSpans,
-      total: allSpans.length,
-      nextCursor,
-      hasMore,
-      warning
-    });
+    res.json({ spans: allSpans, total: allSpans.length, warning });
 
   } catch (error: any) {
     console.error('[TracesAPI] Error:', error);

@@ -14,15 +14,11 @@ export interface ConfigStatus {
     configured: boolean;
     source: 'file' | 'environment' | 'none';
     endpoint?: string;
-    username?: string;
-    hasPassword?: boolean;
   };
   observability: {
     configured: boolean;
     source: 'file' | 'environment' | 'none';
     endpoint?: string;
-    username?: string;
-    hasPassword?: boolean;
     indexes?: {
       traces?: string;
       logs?: string;

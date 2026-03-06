@@ -25,15 +25,14 @@ import {
   calculateTimeRange,
 } from '@/services/traces';
 import { formatDuration } from '@/services/traces/utils';
-import { startMeasure, endMeasure } from '@/lib/performance';
 import TraceVisualization from './TraceVisualization';
 import ViewToggle, { ViewMode } from './ViewToggle';
 
-const REFRESH_INTERVAL_MS = 30000; // 30 seconds - reduces API calls by 67%
+const REFRESH_INTERVAL_MS = 10000; // 10 seconds
 
 export const TracesPage: React.FC = () => {
   // View mode state
-  const [viewMode, setViewMode] = useState<ViewMode>('agent-map');
+  const [viewMode, setViewMode] = useState<ViewMode>('flow');
 
   // Filter state
   const [selectedAgent, setSelectedAgent] = useState<string>('all');
@@ -45,11 +44,6 @@ export const TracesPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
-
-  // Pagination state
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [hasMore, setHasMore] = useState(false);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   // Trace data
   const [spans, setSpans] = useState<Span[]>([]);
@@ -68,19 +62,8 @@ export const TracesPage: React.FC = () => {
   })();
 
   // Process spans into tree
-  const spanTree = useMemo(() => {
-    startMeasure('TracesPage.processTree');
-    const tree = processSpansIntoTree(spans);
-    endMeasure('TracesPage.processTree');
-    return tree;
-  }, [spans]);
-
-  const timeRange = useMemo(() => {
-    startMeasure('TracesPage.calculateTimeRange');
-    const range = calculateTimeRange(spans);
-    endMeasure('TracesPage.calculateTimeRange');
-    return range;
-  }, [spans]);
+  const spanTree = useMemo(() => processSpansIntoTree(spans), [spans]);
+  const timeRange = useMemo(() => calculateTimeRange(spans), [spans]);
 
   // Debounce text search
   useEffect(() => {
@@ -90,68 +73,38 @@ export const TracesPage: React.FC = () => {
     return () => clearTimeout(timer);
   }, [textSearch]);
 
-  // Fetch traces (with optional pagination)
-  const fetchTraces = useCallback(async (loadMore = false) => {
-    const operationName = loadMore ? 'TracesPage.fetchMore' : 'TracesPage.fetchTraces';
-    startMeasure(operationName);
-
-    if (loadMore) {
-      setIsLoadingMore(true);
-    } else {
-      setIsLoading(true);
-      setCursor(null); // Reset cursor on fresh fetch
-    }
+  // Fetch traces
+  const fetchTraces = useCallback(async () => {
+    setIsLoading(true);
     setError(null);
 
     try {
-      startMeasure('TracesPage.apiCall');
       const result = await fetchRecentTraces({
         minutesAgo: 5,
         serviceName: selectedAgent !== 'all' ? selectedAgent : undefined,
         textSearch: debouncedSearch || undefined,
-        size: 100, // Reduced from 500 to 100 for pagination
-        cursor: loadMore ? cursor || undefined : undefined,
+        size: 500,
       });
-      endMeasure('TracesPage.apiCall');
 
-      startMeasure('TracesPage.updateState');
-      if (loadMore) {
-        // Append to existing spans
-        setSpans(prev => [...prev, ...result.spans]);
-      } else {
-        // Replace spans
-        setSpans(result.spans);
-        setLastRefresh(new Date());
-      }
-
-      // Update pagination state
-      setCursor(result.nextCursor || null);
-      setHasMore(result.hasMore || false);
+      setSpans(result.spans);
+      setLastRefresh(new Date());
 
       // Auto-expand root spans (for Timeline view)
-      // Identify roots by checking which spans have no parent in the result set
-      if (result.spans.length > 0 && !loadMore) {
-        const spanIds = new Set(result.spans.map(s => s.spanId));
-        const rootIds = new Set(
-          result.spans
-            .filter(s => !s.parentSpanId || !spanIds.has(s.parentSpanId))
-            .map(s => s.spanId)
-        );
+      if (result.spans.length > 0) {
+        const tree = processSpansIntoTree(result.spans);
+        const rootIds = new Set(tree.map(s => s.spanId));
         setExpandedSpans(prev => {
           const newSet = new Set(prev);
           rootIds.forEach(id => newSet.add(id));
           return newSet;
         });
       }
-      endMeasure('TracesPage.updateState');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch traces');
     } finally {
       setIsLoading(false);
-      setIsLoadingMore(false);
-      endMeasure(operationName);
     }
-  }, [selectedAgent, debouncedSearch, cursor]);
+  }, [selectedAgent, debouncedSearch]);
 
   // Initial fetch and auto-refresh
   useEffect(() => {
@@ -167,26 +120,6 @@ export const TracesPage: React.FC = () => {
       }
     };
   }, [fetchTraces, isTailing]);
-
-  // Pause auto-refresh when tab is hidden to reduce unnecessary API calls
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.hidden) {
-        // Pause when tab is hidden
-        if (refreshIntervalRef.current) {
-          clearInterval(refreshIntervalRef.current);
-          refreshIntervalRef.current = null;
-        }
-      } else if (isTailing && !refreshIntervalRef.current) {
-        // Resume when tab becomes visible
-        fetchTraces(); // Immediate refresh
-        refreshIntervalRef.current = setInterval(fetchTraces, REFRESH_INTERVAL_MS);
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [isTailing, fetchTraces]);
 
   // Toggle expand handler (for Timeline view)
   const handleToggleExpand = useCallback((spanId: string) => {
@@ -244,7 +177,7 @@ export const TracesPage: React.FC = () => {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => fetchTraces(false)}
+            onClick={fetchTraces}
             disabled={isLoading}
           >
             <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
@@ -325,7 +258,7 @@ export const TracesPage: React.FC = () => {
             )}
           </CardTitle>
         </CardHeader>
-        <CardContent className="flex-1 p-0 overflow-hidden flex flex-col">
+        <CardContent className="flex-1 p-0 overflow-hidden">
           {spans.length === 0 && !isLoading ? (
             <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
               <Activity size={48} className="mb-4 opacity-20" />
@@ -337,43 +270,17 @@ export const TracesPage: React.FC = () => {
               </p>
             </div>
           ) : (
-            <>
-              <div className="flex-1 overflow-hidden">
-                <TraceVisualization
-                  spanTree={spanTree}
-                  timeRange={timeRange}
-                  initialViewMode={viewMode}
-                  onViewModeChange={setViewMode}
-                  showViewToggle={false}
-                  selectedSpan={selectedSpan}
-                  onSelectSpan={setSelectedSpan}
-                  expandedSpans={expandedSpans}
-                  onToggleExpand={handleToggleExpand}
-                />
-              </div>
-              {/* Load More button */}
-              {hasMore && (
-                <div className="p-4 border-t flex justify-center">
-                  <Button
-                    variant="outline"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      fetchTraces(true);
-                    }}
-                    disabled={isLoadingMore}
-                  >
-                    {isLoadingMore ? (
-                      <>
-                        <RefreshCw size={14} className="mr-2 animate-spin" />
-                        Loading...
-                      </>
-                    ) : (
-                      `Load More Spans`
-                    )}
-                  </Button>
-                </div>
-              )}
-            </>
+            <TraceVisualization
+              spanTree={spanTree}
+              timeRange={timeRange}
+              initialViewMode={viewMode}
+              onViewModeChange={setViewMode}
+              showViewToggle={false}
+              selectedSpan={selectedSpan}
+              onSelectSpan={setSelectedSpan}
+              expandedSpans={expandedSpans}
+              onToggleExpand={handleToggleExpand}
+            />
           )}
         </CardContent>
       </Card>

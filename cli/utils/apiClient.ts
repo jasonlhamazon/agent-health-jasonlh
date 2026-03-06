@@ -13,17 +13,6 @@
 import type { Benchmark, BenchmarkRun, BenchmarkProgress, RunConfigInput, TestCaseRun, StorageMetadata, AgentConfig, ModelConfig, TestCase } from '@/types/index.js';
 
 /**
- * Error thrown when the server sends an explicit error event via SSE.
- * Distinguished from network/stream disconnects so the CLI can handle them differently.
- */
-export class ServerError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ServerError';
-  }
-}
-
-/**
  * Health check response from server
  */
 export interface HealthResponse {
@@ -94,7 +83,7 @@ export interface EvaluationResult {
  */
 export interface BulkCreateTestCasesResponse {
   created: number;
-  errors: number;
+  errors: boolean;
   testCases: Array<{ id: string; name: string }>;
 }
 
@@ -234,7 +223,7 @@ export class ApiClient {
               } else if (event.type === 'completed' || event.type === 'cancelled') {
                 finalRun = event.run;
               } else if (event.type === 'error') {
-                throw new ServerError(event.error);
+                throw new Error(event.error);
               }
             } catch (e) {
               // Skip non-JSON lines (incomplete chunks)
@@ -245,11 +234,6 @@ export class ApiClient {
         }
       }
     } catch (streamError) {
-      // Server-sent error events are explicit failures - don't attempt recovery
-      if (streamError instanceof ServerError) {
-        throw streamError;
-      }
-
       // Stream disconnected - check if we can recover by polling
       if (runId) {
         console.warn(`[ApiClient] SSE stream disconnected: ${streamError instanceof Error ? streamError.message : streamError}`);
@@ -537,7 +521,7 @@ export class ApiClient {
     // Fall back to name match
     const response = await this.listTestCasesWithMeta();
     return response.data.find(tc =>
-      tc.name?.toLowerCase() === identifier.toLowerCase()
+      tc.name.toLowerCase() === identifier.toLowerCase()
     ) || null;
   }
 
@@ -599,7 +583,7 @@ export class ApiClient {
               if (event.type === 'completed') {
                 result = event.report;
               } else if (event.type === 'error') {
-                throw new ServerError(event.error);
+                throw new Error(event.error);
               }
             } catch (e) {
               // Skip non-JSON lines (incomplete chunks)
@@ -660,45 +644,6 @@ export class ApiClient {
     if (!res.ok) {
       const errorBody = await res.text();
       throw new Error(`Failed to create benchmark: ${errorBody}`);
-    }
-
-    return res.json();
-  }
-
-  /**
-   * Fetch traces from OpenSearch with optional filters
-   */
-  async fetchTraces(params: {
-    traceId?: string;
-    runIds?: string[];
-    serviceName?: string;
-    startTime?: string;
-    endTime?: string;
-    textSearch?: string;
-    cursor?: string;
-    size?: number;
-  }): Promise<{
-    spans: any[];
-    total: number;
-    nextCursor?: string;
-    hasMore: boolean;
-  }> {
-    const res = await fetch(`${this.baseUrl}/api/traces`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-    });
-
-    if (!res.ok) {
-      const errorBody = await res.text();
-      let errorMessage: string;
-      try {
-        const parsed = JSON.parse(errorBody);
-        errorMessage = parsed.error || errorBody;
-      } catch {
-        errorMessage = errorBody;
-      }
-      throw new Error(`Failed to fetch traces: ${errorMessage}`);
     }
 
     return res.json();

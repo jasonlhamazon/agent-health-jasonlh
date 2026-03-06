@@ -81,7 +81,6 @@ export const BenchmarksPage: React.FC = () => {
     description: '',
     agentKey: '',
     modelId: '',
-    concurrency: 1,
   });
 
   const loadBenchmarks = useCallback(async () => {
@@ -384,7 +383,6 @@ export const BenchmarksPage: React.FC = () => {
       agentKey: latestRun?.agentKey || DEFAULT_CONFIG.agents[0]?.key || '',
       modelId: latestRun?.modelId || Object.keys(DEFAULT_CONFIG.models)[0] || '',
       headers: latestRun?.headers,
-      concurrency: latestRun?.concurrency ?? 1,
     });
     setRunConfigBenchmark(bench);
     setIsRunConfigOpen(true);
@@ -415,22 +413,22 @@ export const BenchmarksPage: React.FC = () => {
     try {
       const completedRun = await executeBenchmarkRun(bench.id, runConfigValues, (progress: BenchmarkProgress) => {
         setRunProgress(progress);
-        // Update use case statuses based on progress (ID-based for parallel execution)
-        const tcId = progress.currentTestCaseId;
-        if (tcId) {
-          setUseCaseStatuses(prev => prev.map(uc => {
-            if (uc.id === tcId) {
-              const statusMap: Record<BenchmarkProgress['status'], UseCaseRunStatus['status']> = {
-                'running': 'running',
-                'completed': 'completed',
-                'failed': 'failed',
-                'cancelled': 'cancelled',
-              };
-              return { ...uc, status: statusMap[progress.status] };
-            }
-            return uc;
-          }));
-        }
+        // Update use case statuses based on progress
+        setUseCaseStatuses(prev => prev.map((uc, index) => {
+          if (index < progress.currentTestCaseIndex) {
+            return { ...uc, status: 'completed' as const };
+          } else if (index === progress.currentTestCaseIndex) {
+            // Map progress status to use case status
+            const statusMap: Record<BenchmarkProgress['status'], UseCaseRunStatus['status']> = {
+              'running': 'running',
+              'completed': 'completed',
+              'failed': 'failed',
+              'cancelled': 'cancelled',
+            };
+            return { ...uc, status: statusMap[progress.status] };
+          }
+          return uc;
+        }));
       });
 
       // Mark all as completed when done (server already saved the run)
@@ -678,17 +676,11 @@ export const BenchmarksPage: React.FC = () => {
 
                     {/* Actions */}
                     <div className="flex items-center gap-2">
-                      {/* TODO: Reinstate the BenchmarkResultsView trends/overview feature (aggregate stats, pass/fail charts, metrics over time) */}
                       {!isRunning && bench.runs && bench.runs.length > 0 && (
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => {
-                            const latestRun = getLatestRun(bench);
-                            if (latestRun) {
-                              navigate(`/benchmarks/${bench.id}/runs/${latestRun.id}`);
-                            }
-                          }}
+                          onClick={() => setViewingResultsFor(bench)}
                         >
                           <Eye size={14} className="mr-1" />
                           View Latest
@@ -875,19 +867,6 @@ export const BenchmarksPage: React.FC = () => {
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="run-concurrency">Concurrency</Label>
-                <Input
-                  id="run-concurrency"
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={runConfigValues.concurrency ?? 1}
-                  onChange={e => setRunConfigValues(prev => ({ ...prev, concurrency: Math.max(1, Math.min(20, parseInt(e.target.value, 10) || 1)) }))}
-                />
-                <p className="text-xs text-muted-foreground">Number of test cases to run in parallel (1 = sequential)</p>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">

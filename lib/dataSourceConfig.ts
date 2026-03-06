@@ -7,7 +7,7 @@
  * Data Source Configuration - Frontend API Client
  *
  * This module provides API calls to manage server-side configuration.
- * Credentials are stored on the server (in agent-health.config.json), NOT in browser.
+ * Credentials are stored on the server (in agent-health.yaml), NOT in browser.
  *
  * Security: No credentials are ever stored in localStorage or sent via headers.
  */
@@ -30,23 +30,18 @@ const API_BASE = ENV_CONFIG.backendUrl;
 
 /**
  * Configuration status returned by the backend
- * Credentials are never returned in full — username is safe to show;
- * password existence is indicated via hasPassword so the UI can show placeholder dots.
+ * Never includes credentials - only source and endpoint info
  */
 export interface ConfigStatus {
   storage: {
     configured: boolean;
     source: 'file' | 'environment' | 'none';
     endpoint?: string;
-    username?: string;
-    hasPassword?: boolean;
   };
   observability: {
     configured: boolean;
     source: 'file' | 'environment' | 'none';
     endpoint?: string;
-    username?: string;
-    hasPassword?: boolean;
     indexes?: {
       traces?: string;
       logs?: string;
@@ -78,7 +73,7 @@ export async function getConfigStatus(): Promise<ConfigStatus> {
 // ============================================================================
 
 /**
- * Save storage configuration to server (agent-health.config.json)
+ * Save storage configuration to server (agent-health.yaml)
  */
 export async function saveStorageConfig(config: StorageClusterConfig): Promise<void> {
   const response = await fetch(`${API_BASE}/api/storage/config/storage`, {
@@ -117,7 +112,7 @@ export async function clearStorageConfig(): Promise<void> {
 // ============================================================================
 
 /**
- * Save observability configuration to server (agent-health.config.json)
+ * Save observability configuration to server (agent-health.yaml)
  */
 export async function saveObservabilityConfig(config: ObservabilityClusterConfig): Promise<void> {
   const response = await fetch(`${API_BASE}/api/storage/config/observability`, {

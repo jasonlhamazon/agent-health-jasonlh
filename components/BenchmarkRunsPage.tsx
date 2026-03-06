@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, GitCompare, Calendar, CheckCircle2, XCircle, Play, Trash2, Plus, X, Loader2, Circle, Check, ChevronRight, ChevronDown, Clock, StopCircle, Ban, Timer } from 'lucide-react';
+import { ArrowLeft, GitCompare, Calendar, CheckCircle2, XCircle, Play, Trash2, Plus, X, Loader2, Circle, Check, ChevronRight, Clock, StopCircle, Ban } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -22,7 +22,6 @@ import { useBenchmarkCancellation } from '@/hooks/useBenchmarkCancellation';
 import { Benchmark, BenchmarkRun, TestCase, BenchmarkProgress, BenchmarkStartedEvent, RunStats } from '@/types';
 import { DEFAULT_CONFIG } from '@/lib/constants';
 import { getLabelColor, formatDate, getModelName } from '@/lib/utils';
-import { formatDuration } from '@/services/metrics';
 import {
   computeVersionData,
   getSelectedVersionData,
@@ -31,7 +30,6 @@ import {
   VersionData,
 } from '@/lib/benchmarkVersionUtils';
 import { RunConfigForExecution } from './BenchmarkEditor';
-import { TestCaseDetailPanel } from './TestCaseDetailPanel';
 
 // Track individual use case status during run
 interface UseCaseRunStatus {
@@ -101,7 +99,6 @@ export const BenchmarkRunsPage: React.FC = () => {
     description: '',
     agentKey: '',
     modelId: '',
-    concurrency: 1,
   });
 
   // Running state
@@ -124,9 +121,6 @@ export const BenchmarkRunsPage: React.FC = () => {
   // Version panel state
   const [testCaseVersion, setTestCaseVersion] = useState<number | null>(null); // null = latest
   const [runVersionFilter, setRunVersionFilter] = useState<number | 'all'>('all');
-
-  // Expanded test case card state
-  const [expandedTestCaseId, setExpandedTestCaseId] = useState<string | null>(null);
 
   // Cancellation hook
   const { isCancelling, handleCancelRun } = useBenchmarkCancellation();
@@ -393,7 +387,6 @@ export const BenchmarkRunsPage: React.FC = () => {
       agentKey: latestRun?.agentKey || DEFAULT_CONFIG.agents[0]?.key || '',
       modelId: latestRun?.modelId || Object.keys(DEFAULT_CONFIG.models)[0] || '',
       headers: latestRun?.headers,
-      concurrency: latestRun?.concurrency ?? 1,
     });
     setIsRunConfigOpen(true);
   };
@@ -424,22 +417,22 @@ export const BenchmarkRunsPage: React.FC = () => {
         runConfigValues,
         (progress: BenchmarkProgress) => {
           setRunProgress(progress);
-          // Update use case statuses based on progress (ID-based for parallel execution)
-          const tcId = progress.currentTestCaseId;
-          if (tcId) {
-            setUseCaseStatuses(prev => prev.map(uc => {
-              if (uc.id === tcId) {
-                const statusMap: Record<BenchmarkProgress['status'], UseCaseRunStatus['status']> = {
-                  'running': 'running',
-                  'completed': 'completed',
-                  'failed': 'failed',
-                  'cancelled': 'cancelled',
-                };
-                return { ...uc, status: statusMap[progress.status] };
-              }
-              return uc;
-            }));
-          }
+          // Update use case statuses based on progress
+          setUseCaseStatuses(prev => prev.map((uc, index) => {
+            if (index < progress.currentTestCaseIndex) {
+              return { ...uc, status: 'completed' as const };
+            } else if (index === progress.currentTestCaseIndex) {
+              // Map progress status to use case status
+              const statusMap: Record<BenchmarkProgress['status'], UseCaseRunStatus['status']> = {
+                'running': 'running',
+                'completed': 'completed',
+                'failed': 'failed',
+                'cancelled': 'cancelled',
+              };
+              return { ...uc, status: statusMap[progress.status] };
+            }
+            return uc;
+          }));
         },
         (startedEvent: BenchmarkStartedEvent) => {
           // Update use case names from server response (without resetting status to avoid race condition)
@@ -646,8 +639,8 @@ export const BenchmarkRunsPage: React.FC = () => {
                       key={tc.id}
                       className={`cursor-pointer hover:border-primary/50 transition-colors ${
                         isAddedInThisVersion ? 'border-green-500/30 bg-green-500/5' : ''
-                      } ${expandedTestCaseId === tc.id ? 'border-primary/50' : ''}`}
-                      onClick={() => setExpandedTestCaseId(prev => prev === tc.id ? null : tc.id)}
+                      }`}
+                      onClick={() => navigate(`/test-cases/${tc.id}/runs`)}
                     >
                       <CardContent className="p-3">
                         <div className="flex items-center justify-between">
@@ -673,35 +666,8 @@ export const BenchmarkRunsPage: React.FC = () => {
                               )}
                             </div>
                           </div>
-                          <ChevronDown
-                            size={16}
-                            className={`text-muted-foreground transition-transform flex-shrink-0 ${
-                              expandedTestCaseId === tc.id ? 'rotate-180' : ''
-                            }`}
-                          />
+                          <ChevronRight size={16} className="text-muted-foreground flex-shrink-0" />
                         </div>
-
-                        {expandedTestCaseId === tc.id && (
-                          <div
-                            className="mt-3 pt-3 border-t border-border"
-                            onClick={e => e.stopPropagation()}
-                          >
-                            <TestCaseDetailPanel testCase={tc} />
-                            <Button
-                              variant="link"
-                              size="sm"
-                              className="mt-3 p-0 h-auto text-xs text-opensearch-blue hover:text-blue-400"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                navigate(`/test-cases/${tc.id}/runs`, {
-                                  state: { from: `/benchmarks/${benchmarkId}/runs` },
-                                });
-                              }}
-                            >
-                              View all runs for this test case →
-                            </Button>
-                          </div>
-                        )}
                       </CardContent>
                     </Card>
                   );
@@ -895,12 +861,6 @@ export const BenchmarkRunsPage: React.FC = () => {
                                 </span>
                                 <span>Agent: {DEFAULT_CONFIG.agents.find(a => a.key === run.agentKey)?.name || run.agentKey}</span>
                                 <span>Model: {getModelName(run.modelId)}</span>
-                                {run.performanceMetrics?.durationMs != null && (
-                                  <span className="flex items-center gap-1">
-                                    <Timer size={12} />
-                                    {formatDuration(run.performanceMetrics.durationMs)}
-                                  </span>
-                                )}
                               </div>
                             </div>
                           </div>
@@ -1081,19 +1041,6 @@ export const BenchmarkRunsPage: React.FC = () => {
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="run-concurrency">Concurrency</Label>
-                <Input
-                  id="run-concurrency"
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={runConfigValues.concurrency ?? 1}
-                  onChange={e => setRunConfigValues(prev => ({ ...prev, concurrency: Math.max(1, Math.min(20, parseInt(e.target.value, 10) || 1)) }))}
-                />
-                <p className="text-xs text-muted-foreground">Number of test cases to run in parallel (1 = sequential)</p>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">

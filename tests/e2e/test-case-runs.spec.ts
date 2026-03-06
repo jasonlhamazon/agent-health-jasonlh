@@ -48,7 +48,7 @@ test.describe('Test Case Runs Page', () => {
         await testCaseCard.click();
         await page.waitForTimeout(2000);
 
-        await expect(page.locator('[data-testid="test-case-name"]')).toBeAttached();
+        await expect(page.locator('[data-testid="test-case-name"]')).toBeVisible();
       }
     } else {
       expect(true).toBeTruthy();
@@ -90,7 +90,7 @@ test.describe('Test Case Runs Page', () => {
         await testCaseCard.click();
         await page.waitForTimeout(2000);
 
-        const runButton = page.locator('button:has-text("Run Test")').first();
+        const runButton = page.locator('button:has-text("Run Test")');
         await expect(runButton).toBeVisible();
       }
     } else {

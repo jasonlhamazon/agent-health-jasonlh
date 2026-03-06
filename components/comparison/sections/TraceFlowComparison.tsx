@@ -10,11 +10,10 @@
  * Uses React Flow to display DAG visualization of aligned span trees.
  */
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Activity, RefreshCw, AlertCircle, GitMerge, Columns, Maximize2, Minimize2 } from 'lucide-react';
 import {
   ReactFlow,
-  ReactFlowProvider,
   Background,
   MiniMap,
   useNodesState,
@@ -22,7 +21,6 @@ import {
   Node,
   Edge,
   BackgroundVariant,
-  type ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 
@@ -174,17 +172,18 @@ const ModeToggle: React.FC<{
 };
 
 /**
- * Inner Flow panel content (must be inside ReactFlowProvider)
+ * Single Flow panel for side-by-side view
  */
-const FlowPanelInner: React.FC<{
+const FlowPanel: React.FC<{
   spanTree: CategorizedSpan[];
   timeRange: TimeRange;
+  runName: string;
+  spanCount: number;
   selectedSpan: CategorizedSpan | null;
   onSelectSpan: (span: CategorizedSpan | null) => void;
-}> = ({ spanTree, timeRange, selectedSpan, onSelectSpan }) => {
+}> = ({ spanTree, timeRange, runName, spanCount, selectedSpan, onSelectSpan }) => {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  const reactFlowInstance = useRef<ReactFlowInstance | null>(null);
 
   useEffect(() => {
     if (spanTree.length === 0) {
@@ -201,21 +200,7 @@ const FlowPanelInner: React.FC<{
 
     setNodes(flowNodes);
     setEdges(flowEdges);
-
-    // Fit view after nodes are set (with small delay to ensure render)
-    setTimeout(() => {
-      if (reactFlowInstance.current) {
-        reactFlowInstance.current.fitView({ padding: 0.2, maxZoom: 1 });
-      }
-    }, 100);
   }, [spanTree, timeRange.duration, setNodes, setEdges]);
-
-  const onInit = useCallback((instance: ReactFlowInstance) => {
-    reactFlowInstance.current = instance;
-    setTimeout(() => {
-      instance.fitView({ padding: 0.2, maxZoom: 1 });
-    }, 100);
-  }, []);
 
   const onNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node<SpanNodeData>) => {
@@ -240,67 +225,42 @@ const FlowPanelInner: React.FC<{
   };
 
   return (
-    <ReactFlow
-      nodes={nodes}
-      edges={edges}
-      onNodesChange={onNodesChange}
-      onEdgesChange={onEdgesChange}
-      onNodeClick={onNodeClick}
-      onPaneClick={onPaneClick}
-      onInit={onInit}
-      nodeTypes={nodeTypes}
-      fitView
-      fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
-      minZoom={0.1}
-      maxZoom={2}
-      defaultEdgeOptions={{ type: 'smoothstep' }}
-      proOptions={{ hideAttribution: true }}
-    >
-      <Background
-        variant={BackgroundVariant.Dots}
-        gap={16}
-        size={1}
-        color="#334155"
-      />
-      <MiniMap
-        nodeColor={minimapNodeColor}
-        maskColor="rgba(15, 23, 42, 0.8)"
-        className="!bg-slate-900/50 !border-slate-700 !bottom-2 !right-2"
-        style={{ width: 100, height: 60 }}
-        pannable
-        zoomable
-      />
-    </ReactFlow>
-  );
-};
-
-/**
- * Single Flow panel for side-by-side view.
- * Each panel gets its own ReactFlowProvider to isolate internal stores.
- */
-const FlowPanel: React.FC<{
-  spanTree: CategorizedSpan[];
-  timeRange: TimeRange;
-  runName: string;
-  spanCount: number;
-  selectedSpan: CategorizedSpan | null;
-  onSelectSpan: (span: CategorizedSpan | null) => void;
-}> = ({ spanTree, timeRange, runName, spanCount, selectedSpan, onSelectSpan }) => {
-  return (
-    <div className="flex-1 flex flex-col min-h-0 border-r last:border-r-0">
-      <div className="px-3 py-2 bg-muted/50 border-b text-xs font-medium text-center shrink-0">
+    <div className="flex-1 flex flex-col border-r last:border-r-0">
+      <div className="px-3 py-2 bg-muted/50 border-b text-xs font-medium text-center">
         {runName}
         <span className="text-muted-foreground ml-2">({spanCount} spans)</span>
       </div>
-      <div className="flex-1 min-h-0 relative">
-        <ReactFlowProvider>
-          <FlowPanelInner
-            spanTree={spanTree}
-            timeRange={timeRange}
-            selectedSpan={selectedSpan}
-            onSelectSpan={onSelectSpan}
+      <div className="flex-1 relative">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onNodeClick={onNodeClick}
+          onPaneClick={onPaneClick}
+          nodeTypes={nodeTypes}
+          fitView
+          fitViewOptions={{ padding: 0.2 }}
+          minZoom={0.1}
+          maxZoom={2}
+          defaultEdgeOptions={{ type: 'smoothstep' }}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={16}
+            size={1}
+            color="#334155"
           />
-        </ReactFlowProvider>
+          <MiniMap
+            nodeColor={minimapNodeColor}
+            maskColor="rgba(15, 23, 42, 0.8)"
+            className="!bg-slate-900/50 !border-slate-700 !bottom-2 !right-2"
+            style={{ width: 100, height: 60 }}
+            pannable
+            zoomable
+          />
+        </ReactFlow>
       </div>
     </div>
   );
@@ -421,9 +381,9 @@ function alignedPairsToFlow(
 }
 
 /**
- * Inner content for merged flow view (must be inside ReactFlowProvider)
+ * Merged Flow view showing diff-colored nodes
  */
-const MergedFlowViewInner: React.FC<{
+const MergedFlowView: React.FC<{
   comparisonResult: TraceComparisonResult;
   totalDuration: number;
   selectedSpan: CategorizedSpan | null;
@@ -431,7 +391,6 @@ const MergedFlowViewInner: React.FC<{
 }> = ({ comparisonResult, totalDuration, selectedSpan, onSelectSpan }) => {
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  const reactFlowInstance = useRef<ReactFlowInstance | null>(null);
 
   useEffect(() => {
     if (comparisonResult.alignedTree.length === 0) {
@@ -447,21 +406,7 @@ const MergedFlowViewInner: React.FC<{
 
     setNodes(flowNodes as Node<SpanNodeData>[]);
     setEdges(flowEdges);
-
-    // Fit view after nodes are set (with small delay to ensure render)
-    setTimeout(() => {
-      if (reactFlowInstance.current) {
-        reactFlowInstance.current.fitView({ padding: 0.2, maxZoom: 1 });
-      }
-    }, 100);
   }, [comparisonResult, totalDuration, setNodes, setEdges]);
-
-  const onInit = useCallback((instance: ReactFlowInstance) => {
-    reactFlowInstance.current = instance;
-    setTimeout(() => {
-      instance.fitView({ padding: 0.2, maxZoom: 1 });
-    }, 100);
-  }, []);
 
   const onNodeClick = useCallback(
     (_event: React.MouseEvent, node: Node<MergedSpanNodeData>) => {
@@ -485,54 +430,36 @@ const MergedFlowViewInner: React.FC<{
   };
 
   return (
-    <ReactFlow
-      nodes={nodes}
-      edges={edges}
-      onNodesChange={onNodesChange}
-      onEdgesChange={onEdgesChange}
-      onNodeClick={onNodeClick}
-      onPaneClick={onPaneClick}
-      onInit={onInit}
-      nodeTypes={nodeTypes}
-      fitView
-      fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
-      minZoom={0.1}
-      maxZoom={2}
-      defaultEdgeOptions={{ type: 'smoothstep' }}
-      proOptions={{ hideAttribution: true }}
-    >
-      <Background
-        variant={BackgroundVariant.Dots}
-        gap={16}
-        size={1}
-        color="#334155"
-      />
-      <MiniMap
-        nodeColor={minimapNodeColor}
-        maskColor="rgba(15, 23, 42, 0.8)"
-        className="!bg-slate-900/50 !border-slate-700"
-        pannable
-        zoomable
-      />
-    </ReactFlow>
-  );
-};
-
-/**
- * Merged Flow view showing diff-colored nodes.
- * Wrapped in its own ReactFlowProvider to isolate from side-by-side panels.
- */
-const MergedFlowView: React.FC<{
-  comparisonResult: TraceComparisonResult;
-  totalDuration: number;
-  selectedSpan: CategorizedSpan | null;
-  onSelectSpan: (span: CategorizedSpan | null) => void;
-}> = (props) => {
-  return (
     <div className="flex-1 relative">
-      <ReactFlowProvider>
-        <MergedFlowViewInner {...props} />
-      </ReactFlowProvider>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onNodeClick={onNodeClick}
+        onPaneClick={onPaneClick}
+        nodeTypes={nodeTypes}
+        fitView
+        fitViewOptions={{ padding: 0.2 }}
+        minZoom={0.1}
+        maxZoom={2}
+        defaultEdgeOptions={{ type: 'smoothstep' }}
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background
+          variant={BackgroundVariant.Dots}
+          gap={16}
+          size={1}
+          color="#334155"
+        />
+        <MiniMap
+          nodeColor={minimapNodeColor}
+          maskColor="rgba(15, 23, 42, 0.8)"
+          className="!bg-slate-900/50 !border-slate-700"
+          pannable
+          zoomable
+        />
+      </ReactFlow>
 
       {/* Legend */}
       <div className="absolute top-2 right-2 flex items-center gap-3 px-3 py-1.5 bg-background/80 backdrop-blur-sm rounded-md border text-xs">

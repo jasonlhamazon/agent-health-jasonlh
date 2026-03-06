@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Activity, Gauge, TrendingUp, ArrowRight } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,17 +12,22 @@ import { Button } from '@/components/ui/button';
 const WORKFLOW_CARD_HIDDEN_KEY = 'agent-health-workflow-card-hidden';
 
 /**
- * Optimize with Confidence panel
+ * How it works panel
  * Presents the continuous improvement loop: Trace → Evaluate → Improve
  */
 export const WorkflowNavigator: React.FC = () => {
-  const [isHidden, setIsHidden] = useState(
-    () => localStorage.getItem(WORKFLOW_CARD_HIDDEN_KEY) === 'true'
-  );
+  const [isHidden, setIsHidden] = useState(false);
+
+  useEffect(() => {
+    const hidden = localStorage.getItem(WORKFLOW_CARD_HIDDEN_KEY) === 'true';
+    setIsHidden(hidden);
+  }, []);
 
   const handleDontShowAgain = () => {
     localStorage.setItem(WORKFLOW_CARD_HIDDEN_KEY, 'true');
     setIsHidden(true);
+    // Dispatch custom event to notify Dashboard
+    window.dispatchEvent(new CustomEvent('workflow-card-hidden'));
   };
 
   if (isHidden) {
@@ -32,7 +37,7 @@ export const WorkflowNavigator: React.FC = () => {
   return (
     <Card className="relative overflow-hidden">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">Optimize with Confidence</CardTitle>
+        <CardTitle className="text-base">How it works</CardTitle>
         <CardDescription className="text-xs">
           Agent Health turns traces into insight, and insight into measurable improvement.
         </CardDescription>
@@ -93,6 +98,7 @@ export const WorkflowNavigator: React.FC = () => {
         <div className="space-y-2 text-center">
           <div className="space-y-0.5">
             <div className="flex items-center justify-center gap-1.5 text-blue-500">
+              <Activity className="h-4 w-4" />
               <span className="text-sm font-medium">Trace</span>
             </div>
             <p className="text-xs text-muted-foreground leading-snug">
@@ -102,29 +108,27 @@ export const WorkflowNavigator: React.FC = () => {
 
           <div className="space-y-0.5">
             <div className="flex items-center justify-center gap-1.5 text-purple-500">
+              <Gauge className="h-4 w-4" />
               <span className="text-sm font-medium">Evaluate</span>
             </div>
             <p className="text-xs text-muted-foreground leading-snug">
-              Measure quality before production
+              Benchmark and measure quality before production
             </p>
           </div>
 
           <div className="space-y-0.5">
             <div className="flex items-center justify-center gap-1.5 text-violet-500">
+              <TrendingUp className="h-4 w-4" />
               <span className="text-sm font-medium">Improve</span>
             </div>
             <p className="text-xs text-muted-foreground leading-snug">
-              Create guardrails that prevent regressions
+              Make informed decisions with recorded history
             </p>
           </div>
         </div>
 
         {/* Marketing anchor line */}
-        <div className="text-center">
-          <p className="text-xs font-medium text-foreground/90">
-            Your agents don't just run. They evolve.
-          </p>
-        </div>
+
 
         {/* CTAs with pulsating animations */}
         <style>{`

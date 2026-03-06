@@ -33,23 +33,19 @@ function getConfigFilePath(): string {
 
 /**
  * Read the full JSON config from disk.
- * Returns `{}` when file doesn't exist (safe to create new).
- * Returns `null` when file exists but read/parse fails (unsafe to write — would clobber).
+ * Returns an empty object on any error (missing file, bad JSON, …).
  */
-function readConfigFromDisk(): Record<string, unknown> | null {
+function readConfigFromDisk(): Record<string, unknown> {
   try {
     const filePath = getConfigFilePath();
     if (!fs.existsSync(filePath)) return {};
     const raw = fs.readFileSync(filePath, 'utf-8');
     const parsed = JSON.parse(raw);
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      console.error('[customAgentStore] Config file contains non-object content, refusing to overwrite');
-      return null;
-    }
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
     return parsed as Record<string, unknown>;
   } catch (err) {
     console.error('[customAgentStore] Failed to read config file:', err);
-    return null;
+    return {};
   }
 }
 
@@ -59,7 +55,6 @@ function readConfigFromDisk(): Record<string, unknown> | null {
  */
 function readCustomAgentsFromDisk(): AgentConfig[] {
   const config = readConfigFromDisk();
-  if (config === null) return [];
   const agents = config.customAgents;
   if (!Array.isArray(agents)) return [];
   return agents.filter(
@@ -70,8 +65,7 @@ function readCustomAgentsFromDisk(): AgentConfig[] {
 /**
  * Persist the current store to disk.
  * Preserves any sibling top-level keys already in the file.
- * Only writes the file when there is at least one remaining key — never deletes.
- * File lifecycle (create / delete) is the responsibility of configService.ts.
+ * If the store is empty **and** there are no other keys, the file is deleted.
  */
 function saveToDisk(): void {
   try {
@@ -79,21 +73,21 @@ function saveToDisk(): void {
     const agents = Array.from(store.values());
     const existing = readConfigFromDisk();
 
-    if (existing === null) {
-      console.error('[customAgentStore] Config file is unreadable or corrupt, skipping write to avoid clobber');
-      return;
-    }
-
     if (agents.length === 0) {
+      // Remove customAgents key
       delete existing.customAgents;
+      if (Object.keys(existing).length === 0) {
+        // No other keys — remove the file entirely
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+        return;
+      }
     } else {
       existing.customAgents = agents;
     }
 
-    if (Object.keys(existing).length > 0) {
-      fs.writeFileSync(filePath, JSON.stringify(existing, null, 2) + '\n', 'utf-8');
-    }
-    // If nothing remains, leave the file as-is — file lifecycle is managed by configService.ts
+    fs.writeFileSync(filePath, JSON.stringify(existing, null, 2) + '\n', 'utf-8');
   } catch (err) {
     console.error('[customAgentStore] Failed to write config file:', err);
   }

@@ -82,14 +82,11 @@ test.describe('Benchmark Runs Page', () => {
 
     if (await viewLatestButton.isVisible().catch(() => false)) {
       await viewLatestButton.click();
-      // SPA navigation: waitForLoadState('domcontentloaded') returns immediately, so wait
-      // for the actual run-details element (rendered immediately on mount by RunDetailsPage)
-      await page.locator('[data-testid="run-details-page"]').waitFor({ timeout: 15000 }).catch(() => {});
+      await page.waitForTimeout(2000);
 
-      // Should show run cards or the run details page itself (data may still be loading)
+      // Should show run cards or empty state
       const hasRuns = await page.locator('[class*="card"]').count() > 0;
-      const hasRunDetails = await page.locator('[data-testid="run-details-page"]').isVisible().catch(() => false);
-      expect(hasRuns || hasRunDetails).toBeTruthy();
+      expect(hasRuns).toBeTruthy();
     }
   });
 
