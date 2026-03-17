@@ -16,7 +16,7 @@ import React, { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { formatDuration } from '@/services/traces/utils';
+import { formatDuration, formatCompact } from '@/services/traces/utils';
 
 interface LatencyBucket {
   label: string;
@@ -94,10 +94,10 @@ export const MetricsOverview: React.FC<MetricsOverviewProps> = ({
           <div className="flex items-center gap-3 text-xs">
             {/* Traces + Spans with request sparkline (mirrors Trace Count chart) */}
             <div className="flex items-center gap-1.5">
-              <span className="font-semibold">{totalRequests}</span>
+              <span className="font-semibold">{formatCompact(totalRequests)}</span>
               <span className="text-muted-foreground">traces</span>
               <span className="text-muted-foreground/50">/</span>
-              <span className="font-semibold">{totalSpans}</span>
+              <span className="font-semibold">{formatCompact(totalSpans)}</span>
               <span className="text-muted-foreground">spans</span>
               {!isExpanded && requestTimeSeries.length > 0 && (
                 <svg width="44" height="16" className="ml-0.5" aria-hidden="true">
@@ -165,7 +165,7 @@ export const MetricsOverview: React.FC<MetricsOverviewProps> = ({
             <div className="space-y-2 pr-6">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-medium text-muted-foreground">Trace Count</span>
-                <span className="text-[10px] text-muted-foreground">{totalRequests} total</span>
+                <span className="text-[10px] text-muted-foreground">{formatCompact(totalRequests)} total</span>
               </div>
               <div className="h-24 flex items-end gap-0.5">
                 {requestTimeSeries.map((point, idx) => (
@@ -195,7 +195,7 @@ export const MetricsOverview: React.FC<MetricsOverviewProps> = ({
             <div className="space-y-2 px-6">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-medium text-muted-foreground">Error Count</span>
-                <span className="text-[10px] font-semibold text-red-500">{totalErrors} total</span>
+                <span className="text-[10px] font-semibold text-red-500">{formatCompact(totalErrors)} total</span>
               </div>
               <div className="h-24 relative">
                 <svg className="w-full h-full" preserveAspectRatio="none">
