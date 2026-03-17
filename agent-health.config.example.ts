@@ -20,39 +20,79 @@
 
 export default {
   // Custom agents are merged with built-in agents by default.
-  // Each agent `key` must be unique — if it matches a built-in key
-  // (e.g., "langgraph", "demo"), it will override that built-in agent.
+  // Each agent `key` must be unique — if it matches a built-in key,
+  // it will override that built-in agent.
   agents: [
+    // Example 1: REST connector (synchronous JSON response)
     {
-      key: "my-agent",           // Unique identifier (used in CLI: --agent my-agent)
-      name: "My Custom Agent",   // Display name shown in UI dropdowns and tables
-      endpoint: "http://localhost:3000/agent",
-      connectorType: "agui-streaming",  // "agui-streaming" | "rest" | "subprocess" | "claude-code" | "mock"
-      models: ["claude-sonnet-4.5", "claude-sonnet-4"],
-      useTraces: false,          // Set to true to fetch OTel traces for this agent
-      headers: {},               // Custom headers sent with every request
-
-      // Lifecycle hooks for custom setup/transform logic.
-      // Use hooks when your agent deviates from the standard AG-UI protocol.
-      // hooks: {
-      //   // Called before each request. Use it to create resources, modify the
-      //   // endpoint/payload/headers, or perform any async setup your agent needs.
-      //   // Must return { endpoint, payload, headers }.
-      //   beforeRequest: async ({ endpoint, payload, headers }) => {
-      //     // Example: pre-create a thread (e.g., Pulsar's Coral backend)
-      //     const baseUrl = new URL(endpoint).origin;
-      //     await fetch(`${baseUrl}/api/threads`, {
-      //       method: 'POST',
-      //       headers: { ...headers, 'Content-Type': 'application/json' },
-      //       body: JSON.stringify({
-      //         id: payload.threadId,
-      //         title: payload.messages?.[0]?.content?.slice(0, 100) || 'Evaluation',
-      //       }),
-      //     });
-      //     return { endpoint, payload, headers };
-      //   },
-      // },
+      key: "my-rest-agent",
+      name: "My REST Agent",
+      endpoint: "http://localhost:8000/api/agent",
+      connectorType: "rest",
+      models: ["claude-sonnet-4"],
+      useTraces: true,           // Enable OpenTelemetry trace collection
     },
+
+    // Example 2: Streaming connector (Server-Sent Events)
+    {
+      key: "my-streaming-agent",
+      name: "My Streaming Agent",
+      endpoint: "http://localhost:9000/agent/stream",
+      connectorType: "agui-streaming",
+      models: ["claude-sonnet-4.5"],
+      useTraces: false,
+    },
+
+    // Example 3: CLI tool connector
+    // {
+    //   key: "my-cli-agent",
+    //   name: "My CLI Agent",
+    //   endpoint: "/usr/local/bin/my-agent",
+    //   connectorType: "subprocess",
+    //   models: ["gpt-4"],
+    //   useTraces: false,
+    // },
+
+    // Example 4: Agent with authentication hook
+    // {
+    //   key: "authenticated-agent",
+    //   name: "Authenticated Agent",
+    //   endpoint: "https://api.example.com/agent",
+    //   connectorType: "rest",
+    //   models: ["claude-sonnet-4"],
+    //   useTraces: true,
+    //   hooks: {
+    //     beforeRequest: async ({ endpoint, payload, headers }) => {
+    //       return {
+    //         endpoint,
+    //         payload,
+    //         headers: {
+    //           ...headers,
+    //           'Authorization': `Bearer ${process.env.API_TOKEN}`,
+    //         },
+    //       };
+    //     },
+    //   },
+    // },
+
+    // Example 5: Claude Code with MCP servers (competitive evaluation)
+    // Uses a standard MCP config JSON file (same format as ~/.claude.json mcpServers)
+    // {
+    //   key: "claude-code-eval",
+    //   name: "Claude Code (Eval)",
+    //   endpoint: "claude",
+    //   connectorType: "claude-code",
+    //   models: ["claude-sonnet-4"],
+    //   useTraces: true,
+    //   connectorConfig: {
+    //     dangerouslySkipPermissions: true,
+    //     appendSystemPrompt: "You are an observability agent...",
+    //     allowedTools: ["mcp__aws-prometheus__*", "mcp__aws-cloudwatch__*", "Bash"],
+    //     mcpConfigPath: "./mcp-config.json",  // standard MCP config file
+    //     strictMcpConfig: true,
+    //     env: { CLAUDE_CODE_USE_BEDROCK: "1", AWS_PROFILE: "Bedrock" },
+    //   },
+    // },
   ],
 
   // Custom models (merged with built-in models by default)
@@ -61,7 +101,7 @@ export default {
   //     key: "my-model",
   //     model_id: "us.anthropic.claude-sonnet-4-20250514-v1:0",
   //     display_name: "My Model",
-  //     provider: "bedrock",       // "bedrock" | "ollama" | "openai" | "demo"
+  //     provider: "bedrock",       // "bedrock" | "litellm" | "demo"
   //     context_window: 200000,
   //     max_output_tokens: 4096,
   //   },

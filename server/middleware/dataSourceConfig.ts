@@ -7,14 +7,14 @@
  * Data Source Configuration Resolution
  *
  * Resolves data source configuration from:
- * 1. File (agent-health.yaml) - highest priority
+ * 1. File (agent-health.config.json) - highest priority
  * 2. Environment variables - fallback
  *
  * NO HEADERS - credentials are never sent from browser for security.
  */
 
 import { Request } from 'express';
-import type { StorageClusterConfig, ObservabilityClusterConfig } from '../../types/index.js';
+import type { StorageClusterConfig, ObservabilityClusterConfig, ClusterAuthType } from '../../types/index.js';
 import {
   getStorageConfigFromFile,
   getObservabilityConfigFromFile,
@@ -40,7 +40,7 @@ export const STORAGE_INDEXES = {
  * Resolve storage cluster configuration
  *
  * Priority:
- * 1. File config (agent-health.yaml)
+ * 1. File config (agent-health.config.json)
  * 2. Environment variables (OPENSEARCH_STORAGE_*)
  * 3. null (not configured)
  */
@@ -57,8 +57,12 @@ export function resolveStorageConfig(req: Request): StorageClusterConfig | null 
   if (envEndpoint) {
     return {
       endpoint: envEndpoint,
+      authType: (process.env.OPENSEARCH_STORAGE_AUTH_TYPE as ClusterAuthType) || undefined,
       username: process.env.OPENSEARCH_STORAGE_USERNAME,
       password: process.env.OPENSEARCH_STORAGE_PASSWORD,
+      awsProfile: process.env.OPENSEARCH_STORAGE_AWS_PROFILE,
+      awsRegion: process.env.OPENSEARCH_STORAGE_AWS_REGION,
+      awsService: (process.env.OPENSEARCH_STORAGE_AWS_SERVICE as 'es' | 'aoss') || undefined,
       tlsSkipVerify: process.env.OPENSEARCH_STORAGE_TLS_SKIP_VERIFY === 'true',
     };
   }
@@ -71,7 +75,7 @@ export function resolveStorageConfig(req: Request): StorageClusterConfig | null 
  * Resolve observability cluster configuration
  *
  * Priority:
- * 1. File config (agent-health.yaml)
+ * 1. File config (agent-health.config.json)
  * 2. Environment variables (OPENSEARCH_LOGS_*)
  * 3. null (not configured)
  *
@@ -101,8 +105,12 @@ export function resolveObservabilityConfig(req: Request): ObservabilityClusterCo
   if (envEndpoint) {
     return {
       endpoint: envEndpoint,
+      authType: (process.env.OPENSEARCH_LOGS_AUTH_TYPE as ClusterAuthType) || undefined,
       username: process.env.OPENSEARCH_LOGS_USERNAME,
       password: process.env.OPENSEARCH_LOGS_PASSWORD,
+      awsProfile: process.env.OPENSEARCH_LOGS_AWS_PROFILE,
+      awsRegion: process.env.OPENSEARCH_LOGS_AWS_REGION,
+      awsService: (process.env.OPENSEARCH_LOGS_AWS_SERVICE as 'es' | 'aoss') || undefined,
       tlsSkipVerify: process.env.OPENSEARCH_LOGS_TLS_SKIP_VERIFY === 'true',
       indexes: {
         traces: process.env.OPENSEARCH_LOGS_TRACES_INDEX || DEFAULT_OTEL_INDEXES.traces,
@@ -142,8 +150,12 @@ export function getStorageConfigFromEnv(): StorageClusterConfig | null {
 
   return {
     endpoint,
+    authType: (process.env.OPENSEARCH_STORAGE_AUTH_TYPE as ClusterAuthType) || undefined,
     username: process.env.OPENSEARCH_STORAGE_USERNAME,
     password: process.env.OPENSEARCH_STORAGE_PASSWORD,
+    awsProfile: process.env.OPENSEARCH_STORAGE_AWS_PROFILE,
+    awsRegion: process.env.OPENSEARCH_STORAGE_AWS_REGION,
+    awsService: (process.env.OPENSEARCH_STORAGE_AWS_SERVICE as 'es' | 'aoss') || undefined,
   };
 }
 
@@ -160,8 +172,12 @@ export function getObservabilityConfigFromEnv(): ObservabilityClusterConfig | nu
 
   return {
     endpoint,
+    authType: (process.env.OPENSEARCH_LOGS_AUTH_TYPE as ClusterAuthType) || undefined,
     username: process.env.OPENSEARCH_LOGS_USERNAME,
     password: process.env.OPENSEARCH_LOGS_PASSWORD,
+    awsProfile: process.env.OPENSEARCH_LOGS_AWS_PROFILE,
+    awsRegion: process.env.OPENSEARCH_LOGS_AWS_REGION,
+    awsService: (process.env.OPENSEARCH_LOGS_AWS_SERVICE as 'es' | 'aoss') || undefined,
     indexes: {
       traces: process.env.OPENSEARCH_LOGS_TRACES_INDEX || DEFAULT_OTEL_INDEXES.traces,
       logs: process.env.OPENSEARCH_LOGS_INDEX || DEFAULT_OTEL_INDEXES.logs,

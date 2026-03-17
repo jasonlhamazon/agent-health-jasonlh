@@ -12,10 +12,10 @@ export type Difficulty = 'Easy' | 'Medium' | 'Hard';
 export type DateFormatVariant = 'date' | 'datetime' | 'detailed';
 
 // Judge provider determines which backend service handles evaluation
-export type JudgeProvider = 'demo' | 'bedrock' | 'ollama' | 'openai';
+export type JudgeProvider = 'demo' | 'bedrock' | 'litellm';
 
 // Connector protocol for agent communication
-export type ConnectorProtocol = 'agui-streaming' | 'rest' | 'subprocess' | 'claude-code' | 'mock';
+export type ConnectorProtocol = 'agui-streaming' | 'rest' | 'litellm' | 'subprocess' | 'claude-code' | 'mock';
 
 export interface ModelConfig {
   model_id: string;
@@ -33,8 +33,35 @@ export interface BeforeRequestContext {
   headers: Record<string, string>;
 }
 
+export interface AfterResponseContext {
+  response: any;
+  trajectory: TrajectoryStep[];
+  runId?: string;
+}
+
+export interface BuildTrajectoryContext {
+  spans: Span[];
+  runId: string;
+}
+
 export interface AgentHooks {
+  /**
+   * Called before sending request to agent.
+   * Use to modify endpoint, payload, or headers.
+   */
   beforeRequest?: (context: BeforeRequestContext) => Promise<BeforeRequestContext>;
+
+  /**
+   * Called after receiving response from agent.
+   * Use to extract runId from custom response formats (e.g., PER memory_id).
+   */
+  afterResponse?: (context: AfterResponseContext) => Promise<AfterResponseContext>;
+
+  /**
+   * Called when building trajectory from OTEL traces.
+   * Use to customize trajectory extraction for agents with custom span formats.
+   */
+  buildTrajectory?: (context: BuildTrajectoryContext) => Promise<TrajectoryStep[]>;
 }
 
 export interface AgentConfig {
@@ -45,11 +72,26 @@ export interface AgentConfig {
   enabled?: boolean;
   models: string[]; // Keys referring to ModelConfig
   headers?: Record<string, string>; // Custom headers for agent endpoint (e.g., AWS credentials)
+  auth?: ConnectorAuthConfig; // Explicit auth config (preferred over headers inference)
   useTraces?: boolean; // When true, fetch traces instead of logs for evaluation
   connectorType?: ConnectorProtocol; // Connector protocol (defaults to 'agui-streaming')
   connectorConfig?: Record<string, any>; // Connector-specific configuration
   hooks?: AgentHooks; // Lifecycle hooks for custom setup/transform logic
   isCustom?: boolean; // True for user-added custom endpoints (not from config file)
+}
+
+/**
+ * Authentication config for agents (serializable subset of ConnectorAuth).
+ * Used in AgentConfig for config files — avoids importing connector types.
+ */
+export interface ConnectorAuthConfig {
+  type: 'none' | 'basic' | 'bearer' | 'api-key' | 'aws-sigv4';
+  username?: string;
+  password?: string;
+  token?: string;
+  awsRegion?: string;
+  awsService?: string;
+  headers?: Record<string, string>;
 }
 
 export interface AppConfig {
@@ -157,6 +199,9 @@ export interface TestCaseRun {
   rawEvents?: any[]; // Raw AG UI events for debugging
   connectorProtocol?: ConnectorProtocol; // Protocol used to execute this run (for trajectory parsing)
 
+  // Server-side performance metrics (timing data from evaluation execution)
+  performanceMetrics?: TestCasePerformanceMetrics;
+
   // Trace mode fields (for agents with useTraces: true)
   metricsStatus?: MetricsStatus; // Status of deferred metrics/judge calculation
   traceFetchAttempts?: number; // Number of polling attempts for traces
@@ -240,6 +285,7 @@ export interface TestCase {
   isPromoted: boolean;              // Available for experiments
   createdAt: string;
   updatedAt: string;
+  lastRunAt?: string;               // Timestamp of the most recent evaluation run
 
   // Current version content (convenience accessors - mirrors latest version)
   initialPrompt: string;
@@ -329,12 +375,15 @@ export interface TraceQueryParams {
   size?: number;
   serviceName?: string;
   textSearch?: string;
+  cursor?: string; // For pagination
 }
 
 export interface TraceSearchResult {
   spans: Span[];
   total: number;
   warning?: string;
+  nextCursor?: string | null;
+  hasMore?: boolean;
 }
 
 /**
@@ -515,6 +564,25 @@ export interface ListResponse<T> {
   meta: StorageMetadata;
 }
 
+// ============ Server Performance Metrics ============
+
+/** Server-side performance metrics for a single test case evaluation */
+export interface TestCasePerformanceMetrics {
+  durationMs: number;                    // Total wall-clock time
+  agentDurationMs: number;               // Time in connector.execute()
+  judgeDurationMs?: number;              // Time in callBedrockJudge() (absent in trace mode)
+  judgeAttempts?: number;               // Number of judge retry attempts
+}
+
+/** Server-side performance metrics for an entire benchmark run */
+export interface RunPerformanceMetrics {
+  durationMs: number;                    // Total wall-clock time for the run
+  concurrency: number;                   // Effective concurrency used
+  avgTestCaseDurationMs: number;         // Mean per-test-case duration
+  maxTestCaseDurationMs: number;         // Slowest test case
+  minTestCaseDurationMs: number;         // Fastest test case
+}
+
 // ============ Benchmark Types ============
 
 // Denormalized stats for a benchmark run (computed from reports, stored on run for fast access)
@@ -566,6 +634,7 @@ export interface BenchmarkRun {
   agentEndpoint?: string;          // Override agent endpoint (optional)
   modelId: string;                 // Model to use (also determines judge provider)
   headers?: Record<string, string>; // Custom headers
+  concurrency?: number;              // Parallel test case execution limit (1 = sequential, default)
 
   // Version tracking (for reproducibility)
   benchmarkVersion?: number;       // Which benchmark version was executed (undefined = legacy data)
@@ -575,11 +644,16 @@ export interface BenchmarkRun {
   results: Record<string, {        // testCaseId → result
     reportId: string;              // References EvaluationReport.id
     status: RunResultStatus;
+    error?: string;                // Error message if status is 'failed'
+    performanceMetrics?: TestCasePerformanceMetrics;  // Per-test-case timing data
   }>;
 
   // Denormalized stats (computed from reports, stored for fast list display)
   // Optional during migration period - will be populated by migration CLI or on next run completion
   stats?: RunStats;
+
+  // Server-side performance metrics (populated after run completes)
+  performanceMetrics?: RunPerformanceMetrics;
 }
 
 // Parent entity - persisted to localStorage['benchmarks']
@@ -601,7 +675,9 @@ export interface Benchmark {
 
 // Progress callback for benchmark runner
 export interface BenchmarkProgress {
-  currentTestCaseIndex: number;
+  currentTestCaseIndex: number;  // Kept for backward compat
+  startedCount?: number;         // Number of test cases that have begun execution
+  completedCount?: number;       // Actual count of finished test cases
   totalTestCases: number;
   currentRunId: string;
   currentTestCaseId: string;
@@ -667,6 +743,8 @@ export interface TestCaseRunResult {
   trajectoryAlignment?: number;
   latencyScore?: number;
   testCaseVersion?: string;
+  /** Error message if status is 'failed' */
+  error?: string;
 }
 
 // Per-test-case comparison row
@@ -687,7 +765,7 @@ export interface TestCaseComparisonRow {
 
 // Derived type for creating new benchmark runs - stays in sync with BenchmarkRun
 export type RunConfigInput = Pick<BenchmarkRun,
-  'name' | 'description' | 'agentKey' | 'modelId' | 'agentEndpoint' | 'headers'
+  'name' | 'description' | 'agentKey' | 'modelId' | 'agentEndpoint' | 'headers' | 'concurrency'
 >;
 
 // ============ Server/API Types ============
@@ -802,14 +880,28 @@ export interface MetricsResult {
 // ============ Data Source Configuration Types ============
 
 /**
+ * Authentication type for OpenSearch clusters
+ * - 'none': No authentication (e.g. local development clusters)
+ * - 'basic': Username/password authentication (default, backwards compatible)
+ * - 'sigv4': AWS SigV4 request signing for managed OpenSearch / Serverless
+ */
+export type ClusterAuthType = 'none' | 'basic' | 'sigv4';
+
+/**
  * Base cluster configuration (endpoint + credentials)
  * Used for connecting to OpenSearch or other data sources
  */
 export interface ClusterConfig {
   endpoint: string;
+  authType?: ClusterAuthType;       // default: 'basic' (backwards compatible)
+  // Basic auth
   username?: string;
   password?: string;
-  tlsSkipVerify?: boolean; // default: false (verify certs)
+  // SigV4 auth
+  awsProfile?: string;              // AWS profile name; uses default chain if omitted
+  awsRegion?: string;               // required when authType is 'sigv4'
+  awsService?: 'es' | 'aoss';      // 'es' for managed, 'aoss' for serverless; default 'es'
+  tlsSkipVerify?: boolean;          // default: false (verify certs)
 }
 
 /**
@@ -842,6 +934,8 @@ export interface DataSourceConfig {
 
 /**
  * Adapter type for data sources
- * 'opensearch' is the default, 'memory' is for testing/demo
+ * 'file' is the default (JSON files in agent-health-data/)
+ * 'opensearch' when storage cluster is configured
+ * 'memory' is for testing/demo
  */
-export type DataSourceAdapterType = 'opensearch' | 'memory';
+export type DataSourceAdapterType = 'file' | 'opensearch' | 'memory';

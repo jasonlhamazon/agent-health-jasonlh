@@ -10,6 +10,7 @@ import {
   getSampleSpansForRunIds,
   getSampleSpansByTraceId,
   getAllSampleTraceSpans,
+  getAllSampleTraceSpansWithRecentTimestamps,
   isSampleTraceId,
 } from '@/cli/demo/sampleTraces';
 
@@ -19,11 +20,17 @@ jest.mock('@/server/services/tracesService', () => ({
   checkTracesHealth: jest.fn(),
 }));
 
+// Mock the client factory
+jest.mock('@/server/services/opensearchClientFactory', () => ({
+  createOpenSearchClient: jest.fn().mockReturnValue({ close: jest.fn().mockResolvedValue(undefined) }),
+}));
+
 // Mock the sample traces
 jest.mock('@/cli/demo/sampleTraces', () => ({
   getSampleSpansForRunIds: jest.fn().mockReturnValue([]),
   getSampleSpansByTraceId: jest.fn().mockReturnValue([]),
   getAllSampleTraceSpans: jest.fn().mockReturnValue([]),
+  getAllSampleTraceSpansWithRecentTimestamps: jest.fn().mockReturnValue([]),
   isSampleTraceId: jest.fn().mockReturnValue(false),
 }));
 
@@ -32,6 +39,7 @@ const mockCheckTracesHealth = checkTracesHealth as jest.MockedFunction<typeof ch
 const mockGetSampleSpansForRunIds = getSampleSpansForRunIds as jest.MockedFunction<typeof getSampleSpansForRunIds>;
 const mockGetSampleSpansByTraceId = getSampleSpansByTraceId as jest.MockedFunction<typeof getSampleSpansByTraceId>;
 const mockGetAllSampleTraceSpans = getAllSampleTraceSpans as jest.MockedFunction<typeof getAllSampleTraceSpans>;
+const mockGetAllSampleTraceSpansWithRecentTimestamps = getAllSampleTraceSpansWithRecentTimestamps as jest.MockedFunction<typeof getAllSampleTraceSpansWithRecentTimestamps>;
 const mockIsSampleTraceId = isSampleTraceId as jest.MockedFunction<typeof isSampleTraceId>;
 
 // Helper to create mock request/response
@@ -74,6 +82,7 @@ describe('Traces Routes', () => {
     mockGetSampleSpansForRunIds.mockReturnValue([]);
     mockGetSampleSpansByTraceId.mockReturnValue([]);
     mockGetAllSampleTraceSpans.mockReturnValue([]);
+    mockGetAllSampleTraceSpansWithRecentTimestamps.mockReturnValue([]);
     mockIsSampleTraceId.mockReturnValue(false);
   });
 
@@ -104,9 +113,10 @@ describe('Traces Routes', () => {
 
       expect(mockFetchTraces).toHaveBeenCalledWith(
         expect.objectContaining({ traceId: 'trace-123' }),
-        expect.any(Object)
+        expect.any(Object),
+        expect.any(String)
       );
-      expect(res.json).toHaveBeenCalledWith({ spans: [], total: 0, warning: undefined });
+      expect(res.json).toHaveBeenCalledWith({ spans: [], total: 0, nextCursor: null, hasMore: false, warning: undefined });
     });
 
     it('should accept runIds filter', async () => {
@@ -122,7 +132,8 @@ describe('Traces Routes', () => {
 
       expect(mockFetchTraces).toHaveBeenCalledWith(
         expect.objectContaining({ runIds: ['run-1', 'run-2'] }),
-        expect.any(Object)
+        expect.any(Object),
+        expect.any(String)
       );
     });
 
@@ -142,7 +153,8 @@ describe('Traces Routes', () => {
           startTime: '2024-01-01T00:00:00Z',
           endTime: '2024-01-02T00:00:00Z',
         }),
-        expect.any(Object)
+        expect.any(Object),
+        expect.any(String)
       );
     });
 
@@ -163,6 +175,8 @@ describe('Traces Routes', () => {
       expect(res.json).toHaveBeenCalledWith({
         spans: sampleSpans,
         total: 1,
+        nextCursor: null,
+        hasMore: false,
         warning: undefined,
       });
     });
@@ -182,11 +196,13 @@ describe('Traces Routes', () => {
       expect(res.json).toHaveBeenCalledWith({
         spans: [...sampleSpans, ...realSpans],
         total: 2,
+        nextCursor: null,
+        hasMore: false,
         warning: undefined,
       });
     });
 
-    it('should use default size of 500', async () => {
+    it('should use default size of 100', async () => {
       mockFetchTraces.mockResolvedValue({ spans: [], total: 0 });
 
       const { req, res } = createMocks({ traceId: 'trace-123' });
@@ -195,8 +211,9 @@ describe('Traces Routes', () => {
       await handler(req, res);
 
       expect(mockFetchTraces).toHaveBeenCalledWith(
-        expect.objectContaining({ size: 500 }),
-        expect.any(Object)
+        expect.objectContaining({ size: 100 }),
+        expect.any(Object),
+        expect.any(String)
       );
     });
 
@@ -214,6 +231,8 @@ describe('Traces Routes', () => {
       expect(res.json).toHaveBeenCalledWith({
         spans: sampleSpans,
         total: 1,
+        nextCursor: null,
+        hasMore: false,
         warning: 'Observability data source not configured',
       });
     });
@@ -231,6 +250,8 @@ describe('Traces Routes', () => {
       expect(res.json).toHaveBeenCalledWith({
         spans: sampleSpans,
         total: 1,
+        nextCursor: null,
+        hasMore: false,
         warning: 'Connection failed',
       });
     });
@@ -251,13 +272,16 @@ describe('Traces Routes', () => {
 
       expect(mockFetchTraces).toHaveBeenCalledWith(
         expect.objectContaining({ startTime: 1704067200000, endTime: 1704153600000 }),
-        expect.any(Object)
+        expect.any(Object),
+        expect.any(String)
       );
       expect(mockGetSampleSpansForRunIds).not.toHaveBeenCalled();
       expect(mockGetSampleSpansByTraceId).not.toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith({
         spans: liveSpans,
         total: 1,
+        nextCursor: null,
+        hasMore: false,
         warning: undefined,
       });
     });
@@ -273,12 +297,19 @@ describe('Traces Routes', () => {
       expect(res.json).toHaveBeenCalledWith({
         spans: [],
         total: 0,
+        nextCursor: null,
+        hasMore: false,
         warning: 'index_not_found_exception',
       });
     });
 
-    it('should return warning when observability config is missing', async () => {
+    it('should return demo spans with warning when observability config is missing for time-range query', async () => {
       process.env.OPENSEARCH_LOGS_ENDPOINT = '';
+      const demoSpans = [
+        { traceId: 'demo-trace-001', spanId: 'ds1', name: 'demo-span', startTime: '2024-01-01', endTime: '2024-01-01', duration: 100, status: 'OK' as const, attributes: { 'service.name': 'travel-planner' } },
+        { traceId: 'demo-trace-002', spanId: 'ds2', name: 'demo-span-2', startTime: '2024-01-01', endTime: '2024-01-01', duration: 200, status: 'OK' as const, attributes: { 'service.name': 'other-service' } },
+      ];
+      mockGetAllSampleTraceSpansWithRecentTimestamps.mockReturnValue(demoSpans as any);
 
       const { req, res } = createMocks({
         startTime: 1704067200000,
@@ -289,14 +320,69 @@ describe('Traces Routes', () => {
       await handler(req, res);
 
       expect(mockFetchTraces).not.toHaveBeenCalled();
+      expect(mockGetAllSampleTraceSpansWithRecentTimestamps).toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith({
-        spans: [],
-        total: 0,
+        spans: demoSpans,
+        total: 2,
+        nextCursor: null,
+        hasMore: false,
         warning: 'Observability data source not configured',
       });
     });
 
-    it('should not return sample traces for time-range-only queries', async () => {
+    it('should filter demo spans by serviceName when no config', async () => {
+      process.env.OPENSEARCH_LOGS_ENDPOINT = '';
+      const demoSpans = [
+        { traceId: 'demo-trace-001', spanId: 'ds1', name: 'span-a', startTime: '2024-01-01', endTime: '2024-01-01', duration: 100, status: 'OK' as const, attributes: { 'service.name': 'travel-planner' } },
+        { traceId: 'demo-trace-002', spanId: 'ds2', name: 'span-b', startTime: '2024-01-01', endTime: '2024-01-01', duration: 200, status: 'OK' as const, attributes: { 'service.name': 'other-service' } },
+      ];
+      mockGetAllSampleTraceSpansWithRecentTimestamps.mockReturnValue(demoSpans as any);
+
+      const { req, res } = createMocks({
+        startTime: 1704067200000,
+        endTime: 1704153600000,
+        serviceName: 'travel-planner',
+      });
+      const handler = getRouteHandler(tracesRoutes, 'post', '/api/traces');
+
+      await handler(req, res);
+
+      expect(res.json).toHaveBeenCalledWith({
+        spans: [demoSpans[0]],
+        total: 1,
+        nextCursor: null,
+        hasMore: false,
+        warning: 'Observability data source not configured',
+      });
+    });
+
+    it('should filter demo spans by textSearch when no config', async () => {
+      process.env.OPENSEARCH_LOGS_ENDPOINT = '';
+      const demoSpans = [
+        { traceId: 'demo-trace-001', spanId: 'ds1', name: 'invoke_agent Weather Agent', startTime: '2024-01-01', endTime: '2024-01-01', duration: 100, status: 'OK' as const, attributes: { 'service.name': 'travel-planner' } },
+        { traceId: 'demo-trace-002', spanId: 'ds2', name: 'chat claude-sonnet-4', startTime: '2024-01-01', endTime: '2024-01-01', duration: 200, status: 'OK' as const, attributes: { 'service.name': 'travel-planner' } },
+      ];
+      mockGetAllSampleTraceSpansWithRecentTimestamps.mockReturnValue(demoSpans as any);
+
+      const { req, res } = createMocks({
+        startTime: 1704067200000,
+        endTime: 1704153600000,
+        textSearch: 'weather',
+      });
+      const handler = getRouteHandler(tracesRoutes, 'post', '/api/traces');
+
+      await handler(req, res);
+
+      expect(res.json).toHaveBeenCalledWith({
+        spans: [demoSpans[0]],
+        total: 1,
+        nextCursor: null,
+        hasMore: false,
+        warning: 'Observability data source not configured',
+      });
+    });
+
+    it('should NOT return demo spans for time-range query when config exists', async () => {
       mockFetchTraces.mockResolvedValue({ spans: [], total: 0 });
 
       const { req, res } = createMocks({
@@ -309,9 +395,12 @@ describe('Traces Routes', () => {
 
       expect(mockGetSampleSpansForRunIds).not.toHaveBeenCalled();
       expect(mockGetSampleSpansByTraceId).not.toHaveBeenCalled();
+      expect(mockGetAllSampleTraceSpansWithRecentTimestamps).not.toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith({
         spans: [],
         total: 0,
+        nextCursor: null,
+        hasMore: false,
         warning: undefined,
       });
     });
@@ -363,12 +452,10 @@ describe('Traces Routes', () => {
 
       await handler(req, res);
 
-      expect(mockCheckTracesHealth).toHaveBeenCalledWith({
-        endpoint: 'http://localhost:9200',
-        username: 'admin',
-        password: 'admin',
-        indexPattern: 'otel-traces-*',
-      });
+      expect(mockCheckTracesHealth).toHaveBeenCalledWith(
+        expect.any(Object),
+        expect.any(String)
+      );
       expect(res.json).toHaveBeenCalledWith(healthResult);
     });
 

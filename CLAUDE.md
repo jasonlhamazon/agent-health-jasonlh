@@ -73,6 +73,20 @@ npx @opensearch-project/agent-health list test-cases # List sample test cases
 npx @opensearch-project/agent-health run -t <test-case> -a <agent>  # Run test case
 npx @opensearch-project/agent-health doctor         # Check configuration
 npx @opensearch-project/agent-health init           # Initialize config files
+
+# Import test cases from JSON and run benchmark
+npx @opensearch-project/agent-health benchmark -f ./test-cases.json -a <agent>
+npx @opensearch-project/agent-health benchmark -f ./test-cases.json -n "My Benchmark" -a <agent>
+
+# Export test cases (produces import-compatible JSON)
+npx @opensearch-project/agent-health export -b <benchmark> -o test-cases.json
+
+# Generate reports (HTML, PDF, JSON)
+npx @opensearch-project/agent-health report -b <benchmark>
+npx @opensearch-project/agent-health report -b <benchmark> -f pdf -o report.pdf
+
+# One-time migration for existing benchmark runs
+npx @opensearch-project/agent-health migrate --dry-run
 ```
 
 **IMPORTANT:** Do not modify the `name` or `version` fields in `package.json`. These are used for publishing the tool via NPX.
@@ -88,6 +102,8 @@ npx @opensearch-project/agent-health init           # Initialize config files
 ## Architecture
 
 > **Full documentation:** See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture patterns, including the server-mediated CLI design and Playwright-style server lifecycle.
+
+> **Performance optimization:** See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for detailed performance optimizations in the Benchmark Runs Overview page, including lightweight polling, field projection, pagination, and adaptive intervals.
 
 ### Key Architecture Principle
 
@@ -117,6 +133,147 @@ npx @opensearch-project/agent-health init           # Initialize config files
 - `index.ts`: Trace fetching and metrics calculation from OTel spans
 - `traceGrouping.ts`: Groups flat spans by traceId with summary statistics for table view
 - `spanCategorization.ts`: Categorizes spans by type (AGENT, LLM, TOOL, etc.) based on OTEL conventions
+
+### OpenTelemetry Instrumentation Standards
+
+**CRITICAL REQUIREMENT:** All agents integrating with Agent Health MUST follow OpenTelemetry semantic conventions for instrumentation data.
+
+#### Required Semantic Conventions
+
+Agent instrumentation MUST adhere to the standardized attributes defined in:
+- **Gen AI Conventions**: https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/
+
+#### Mandatory Implementation Requirements
+
+**1. Span Attributes**
+
+All LLM interaction spans MUST include:
+```typescript
+{
+  "gen_ai.system": "anthropic" | "openai" | "aws.bedrock" | ...,
+  "gen_ai.request.model": "claude-sonnet-4",
+  "gen_ai.operation.name": "chat" | "completion" | "embedding",
+  "gen_ai.request.temperature": 0.7,
+  "gen_ai.request.max_tokens": 4096,
+  "gen_ai.usage.prompt_tokens": 1234,
+  "gen_ai.usage.completion_tokens": 567,
+}
+```
+
+**2. Span Hierarchy**
+
+Follow this structure:
+- **Root span**: Agent execution (e.g., `agent.execute`, `rca.analyze`)
+- **Child spans**: LLM calls, tool invocations, retrieval operations
+- **Grandchild spans**: Nested operations within tools
+
+**3. Tool Invocation Spans**
+
+Tool execution spans MUST include:
+```typescript
+{
+  "gen_ai.tool.name": "search_logs",
+  "gen_ai.tool.description": "Search application logs for errors",
+  // Tool input as span event
+  // Tool output as span event
+}
+```
+
+**4. Span Events**
+
+Capture key moments as span events:
+- `gen_ai.content.prompt` - Input to LLM
+- `gen_ai.content.completion` - Output from LLM
+- `gen_ai.tool.input` - Tool invocation arguments
+- `gen_ai.tool.output` - Tool execution results
+
+#### Implementation Example
+
+```python
+from opentelemetry import trace
+from opentelemetry.trace import SpanKind
+
+tracer = trace.get_tracer(__name__)
+
+# Root agent span
+with tracer.start_as_current_span(
+    "agent.execute",
+    kind=SpanKind.INTERNAL
+) as agent_span:
+    agent_span.set_attribute("agent.name", "rca-agent")
+    agent_span.set_attribute("agent.version", "1.0.0")
+
+    # LLM call span
+    with tracer.start_as_current_span(
+        "chat",
+        kind=SpanKind.CLIENT,
+        attributes={
+            "gen_ai.system": "anthropic",
+            "gen_ai.request.model": "claude-sonnet-4",
+            "gen_ai.operation.name": "chat",
+            "gen_ai.request.temperature": 0.7,
+            "gen_ai.request.max_tokens": 4096,
+        }
+    ) as llm_span:
+        response = call_llm(prompt)
+
+        llm_span.set_attributes({
+            "gen_ai.usage.prompt_tokens": response.usage.input_tokens,
+            "gen_ai.usage.completion_tokens": response.usage.output_tokens,
+        })
+
+        llm_span.add_event(
+            "gen_ai.content.prompt",
+            {"content": prompt}
+        )
+        llm_span.add_event(
+            "gen_ai.content.completion",
+            {"content": response.text}
+        )
+
+    # Tool invocation span
+    with tracer.start_as_current_span(
+        "tool.invoke",
+        kind=SpanKind.INTERNAL,
+        attributes={
+            "gen_ai.tool.name": "search_logs",
+        }
+    ) as tool_span:
+        result = search_logs(query="ERROR", time_range="1h")
+        tool_span.add_event("gen_ai.tool.output", {"result": result})
+```
+
+#### Why This Matters
+
+1. **Trace Visualization**: `spanCategorization.ts` relies on these attributes to categorize spans (LLM, TOOL, AGENT)
+2. **Metrics Calculation**: `metrics.ts` computes token counts and costs from `gen_ai.usage.*` attributes
+3. **Cross-Agent Comparison**: Standardized attributes enable fair performance comparisons
+4. **Debugging**: Consistent naming helps identify bottlenecks and errors
+
+#### Validation
+
+To validate your agent's instrumentation:
+
+1. Enable traces in `agent-health.config.ts`:
+   ```typescript
+   {
+     key: "my-agent",
+     useTraces: true,
+     // ...
+   }
+   ```
+
+2. Run an evaluation and view traces in the UI
+3. Inspect span attributes in the Timeline/Flow views
+4. Verify all required `gen_ai.*` attributes are present
+5. Check span hierarchy matches expected structure
+
+#### Additional Resources
+
+- [OpenTelemetry Gen AI Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/)
+- [Gen AI Attributes Registry](https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/)
+- [Span Categorization Implementation](./services/traces/spanCategorization.ts)
+- [Metrics Calculation](./services/traces/index.ts)
 
 **Client Services** (`services/client/`):
 - `evaluationApi.ts`: Browser-side API client for server-mediated evaluation (SSE streaming)
@@ -243,7 +400,8 @@ import { getConfig } from '@/lib/config';
 Entry point for NPX package (`bin/cli.js` → `cli/index.ts`):
 - `commands/list.ts`: List agents, test cases, benchmarks, connectors
 - `commands/run.ts`: Run single test case against an agent
-- `commands/benchmark.ts`: Run full benchmark across multiple test cases and agents
+- `commands/benchmark.ts`: Run full benchmark across multiple test cases and agents (supports `-f <file.json>` to import test cases from JSON)
+- `commands/export.ts`: Export benchmark test cases as import-compatible JSON
 - `commands/doctor.ts`: Check configuration and system requirements
 - `commands/init.ts`: Initialize `agent-health.config.ts` configuration file
 - `utils/serverLifecycle.ts`: Playwright-style server auto-start (start if not running, auto-stop on exit)
@@ -287,6 +445,12 @@ Test cases are managed via the UI (Settings > Use Cases) and stored in OpenSearc
 - **Labels**: Unified tagging system (e.g., `category:RCA`, `difficulty:Medium`)
 - **Versions**: Immutable history - each edit creates a new version
 - **expectedOutcomes**: Text descriptions of expected agent behavior (used by judge)
+
+### Storage Adapter Validation
+
+Both the file and OpenSearch storage adapters enforce these invariants:
+- **`testCases.create()`** requires a `name` field — throws `'Test case name is required'` if missing.
+- **`testCases.update()`** throws `'Test case {id} not found'` if the entity doesn't already exist (consistent with `benchmarks.update()` and `runs.update()`). This prevents ghost documents from being silently created via update-as-upsert.
 
 ### Adding New Models
 
@@ -704,6 +868,22 @@ npm test -- --watch                   # Watch mode
 - May use real services (OpenSearch, etc.)
 - Name files `*.integration.test.ts`
 - Longer timeout allowed (30s)
+- **Always clean up created data in `afterAll`** — delete every test case, benchmark, and run created during the test via the API. Integration tests that write to the file-based storage backend (`agent-health-data/`) will leave JSON files on disk if cleanup is skipped, polluting the working directory.
+
+```typescript
+// Pattern: track IDs and delete in afterAll
+const createdTestCaseIds: string[] = [];
+const createdBenchmarkIds: string[] = [];
+
+afterAll(async () => {
+  for (const id of createdTestCaseIds) {
+    await fetch(`${BASE_URL}/api/storage/test-cases/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+  }
+  for (const id of createdBenchmarkIds) {
+    await fetch(`${BASE_URL}/api/storage/benchmarks/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+  }
+});
+```
 
 ## CI/CD Workflows
 
@@ -758,24 +938,45 @@ When preparing to raise a PR against the upstream repository (change remote from
      - `Fixed` - Bug fixes
      - `Removed` - Removed features or deprecated code
      - `Security` - Security-related fixes
-   - Include PR link in format `([#PR_NUMBER](https://github.com/opensearch-project/dashboards-traces/pull/PR_NUMBER))`
+   - Include PR link in format `([#PR_NUMBER](https://github.com/opensearch-project/agent-health/pull/PR_NUMBER))`
    ```markdown
    ## [Unreleased]
    ### Added
-   - CLI commands for headless agent evaluation ([#33](https://github.com/opensearch-project/dashboards-traces/pull/33))
+   - CLI commands for headless agent evaluation ([#33](https://github.com/opensearch-project/agent-health/pull/33))
 
    ### Fixed
-   - Memory leak in benchmark timeout handling ([#33](https://github.com/opensearch-project/dashboards-traces/pull/33))
+   - Memory leak in benchmark timeout handling ([#33](https://github.com/opensearch-project/agent-health/pull/33))
    ```
 
-6. **Push to your fork (change remote name as needed):**
+6. **Run pre-PR checks (REQUIRED - fix all before pushing):**
+   ```bash
+   # Build and test - all must pass
+   npm run build:all && npm run test:all
+
+   # Security scan - no high/critical vulnerabilities allowed
+   npm audit --audit-level=high
+
+   # Verify license headers on new files (CI checks this)
+   # All .ts, .tsx, .js, .jsx, .css files need SPDX header
+   ```
+
+   **Pre-PR Checklist:**
+   - [ ] All commits have DCO signoff (`git log origin/main..HEAD | grep "Signed-off-by"`)
+   - [ ] `CHANGELOG.md` updated under `## [Unreleased]` with PR link
+   - [ ] `npm run build:all` succeeds
+   - [ ] `npm run test:all` passes (unit + integration + e2e)
+   - [ ] `npm audit --audit-level=high` reports no vulnerabilities
+   - [ ] New source files have SPDX license headers
+   - [ ] No secrets committed (`.env`, credentials, tokens)
+
+7. **Push to your fork (change remote name as needed):**
    ```bash
    git push -u fork <branch-name>
    ```
 
-7. **Create PR** via GitHub UI or CLI:
+8. **Create PR** via GitHub UI or CLI:
    ```bash
-   gh pr create --repo opensearch-project/dashboards-traces --base main
+   gh pr create --repo opensearch-project/agent-health --base main
    ```
 
 ## OpenSearch Project Compliance
@@ -865,7 +1066,11 @@ The following features are planned but not yet implemented:
 - Trajectory similarity scoring
 
 ### Observability
-- OpenTelemetry integration for connector spans
-- Prometheus metrics export
+
+**Note:** OpenTelemetry semantic conventions are now a REQUIRED standard (see [OpenTelemetry Instrumentation Standards](#opentelemetry-instrumentation-standards)).
+
+Pending features:
+- Prometheus metrics export endpoint
 - Structured logging with correlation IDs
+- OpenTelemetry collector integration
 

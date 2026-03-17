@@ -140,6 +140,21 @@ describe('Debug Utility', () => {
   describe('Node.js environment (no window)', () => {
     const originalWindow = global.window;
 
+    /**
+     * Helper: mock fs so the debug module does NOT read/write the real
+     * agent-health.config.json. Without this, a previous interrupted
+     * test run can leave the file with `debug: true`, causing flaky failures.
+     */
+    function mockFsNoConfigFile() {
+      const realFs = jest.requireActual('fs');
+      jest.mock('fs', () => ({
+        ...realFs,
+        existsSync: jest.fn().mockReturnValue(false),
+        readFileSync: realFs.readFileSync,
+        writeFileSync: jest.fn(),
+      }));
+    }
+
     afterEach(() => {
       Object.defineProperty(global, 'window', {
         value: originalWindow,
@@ -152,6 +167,7 @@ describe('Debug Utility', () => {
       // @ts-ignore - removing window to simulate Node.js
       delete global.window;
       jest.resetModules();
+      mockFsNoConfigFile();
 
       const mod = require('@/lib/debug');
       expect(mod.isDebugEnabled()).toBe(false);
@@ -161,7 +177,9 @@ describe('Debug Utility', () => {
       // @ts-ignore
       delete global.window;
       process.env.DEBUG = 'true';
+
       jest.resetModules();
+      mockFsNoConfigFile();
 
       const mod = require('@/lib/debug');
       expect(mod.isDebugEnabled()).toBe(true);
@@ -171,6 +189,7 @@ describe('Debug Utility', () => {
       // @ts-ignore
       delete global.window;
       jest.resetModules();
+      mockFsNoConfigFile();
 
       const mod = require('@/lib/debug');
       expect(mod.isDebugEnabled()).toBe(false);
@@ -186,6 +205,7 @@ describe('Debug Utility', () => {
       // @ts-ignore
       delete global.window;
       jest.resetModules();
+      mockFsNoConfigFile();
 
       const mod = require('@/lib/debug');
       mod.setDebugEnabled(true);
@@ -198,12 +218,42 @@ describe('Debug Utility', () => {
       // @ts-ignore
       delete global.window;
       jest.resetModules();
+      mockFsNoConfigFile();
 
       const mod = require('@/lib/debug');
       mod.setDebugEnabled(false);
       mod.debug('ServerTest', 'should not appear');
 
       expect(consoleDebugSpy).not.toHaveBeenCalled();
+    });
+
+    it('should skip file write when existing config has non-object content (clobber prevention)', () => {
+      // @ts-ignore
+      delete global.window;
+      jest.resetModules();
+
+      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+      const realFs = jest.requireActual('fs');
+      const mockWriteFileSync = jest.fn();
+      jest.mock('fs', () => ({
+        ...realFs,
+        existsSync: jest.fn().mockReturnValue(true),
+        readFileSync: jest.fn().mockReturnValue('["an", "array"]'),
+        writeFileSync: mockWriteFileSync,
+      }));
+
+      const mod = require('@/lib/debug');
+      mod.setDebugEnabled(true);
+
+      // The in-memory flag should still be updated
+      expect(mod.isDebugEnabled()).toBe(true);
+      // But the file should NOT be written
+      expect(mockWriteFileSync).not.toHaveBeenCalled();
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('non-object content'),
+      );
+
+      consoleWarnSpy.mockRestore();
     });
   });
 });

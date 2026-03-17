@@ -1,0 +1,12 @@
+observability:
+  endpoint: https://search-novapulsar-beta-v2-dxmefn4zhasaoi2jb4iomb3qna.us-east-1.es.amazonaws.com
+  username: admin
+  password: uSYdEver1zRKYIx!
+  tlsSkipVerify: false
+  indexes:
+    traces: otel-v1-apm-span-*
+    logs: ml-commons-logs-*
+storage:
+  endpoint: https://search-goyamegh-agent-logs-7qplqzxzzcyn5cvl3n3bxfv7aq.aos.us-east-1.on.aws
+  username: admin
+  tlsSkipVerify: false

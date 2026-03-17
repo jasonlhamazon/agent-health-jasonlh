@@ -68,15 +68,16 @@ const groupByCategory = (testCases: TestCase[]): Record<string, TestCase[]> => {
     }
     grouped[category].push(tc);
   });
-  // Sort categories alphabetically and sort test cases within each category by newest first
+  const lastActivity = (tc: TestCase): number => Math.max(
+    tc.lastRunAt ? new Date(tc.lastRunAt).getTime() : 0,
+    tc.updatedAt ? new Date(tc.updatedAt).getTime() : 0,
+    tc.createdAt ? new Date(tc.createdAt).getTime() : 0,
+  );
+  // Sort categories alphabetically and sort test cases within each category by lastActivity
   return Object.keys(grouped)
     .sort()
     .reduce((acc, key) => {
-      acc[key] = grouped[key].sort((a, b) => {
-        const dateA = new Date(a.createdAt).getTime();
-        const dateB = new Date(b.createdAt).getTime();
-        return dateB - dateA; // Newest first
-      });
+      acc[key] = grouped[key].sort((a, b) => lastActivity(b) - lastActivity(a));
       return acc;
     }, {} as Record<string, TestCase[]>);
 };
@@ -107,7 +108,7 @@ const TestCaseCard = ({ testCase, runCount, onClick, onRun, onEdit, onDelete, is
       <CardHeader className="pb-2">
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0">
-            <CardTitle className="text-base truncate">{testCase.name}</CardTitle>
+            <CardTitle className="text-base truncate">{testCase.name || '(Unnamed)'}</CardTitle>
             <CardDescription className="flex items-center gap-2 mt-1 flex-wrap">
               {displayLabels.map((label) => (
                 <Badge 
@@ -164,7 +165,7 @@ const TestCaseCard = ({ testCase, runCount, onClick, onRun, onEdit, onDelete, is
       </CardHeader>
       <CardContent className="pt-0">
         <p className="text-sm text-muted-foreground line-clamp-2">
-          {testCase.initialPrompt}
+          {testCase.initialPrompt || '(No prompt)'}
         </p>
       </CardContent>
     </Card>

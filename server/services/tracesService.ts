@@ -5,48 +5,13 @@
 
 /**
  * Traces Service - Fetch and transform OpenSearch trace data
+ *
+ * Uses the OpenSearch SDK Client (instead of raw HTTP) so that
+ * authentication (basic auth or AWS SigV4) is handled transparently.
  */
 
-import https from 'https';
-import http from 'http';
+import { Client } from '@opensearch-project/opensearch';
 import { debug } from '../../lib/debug.js';
-
-/**
- * Make HTTP/HTTPS request with configurable TLS verification
- */
-function makeRequest(url: string, options: { method?: string; headers?: Record<string, string>; body?: string; tlsSkipVerify?: boolean }): Promise<{ ok: boolean; status: number; json: () => Promise<any>; text: () => Promise<string> }> {
-  return new Promise((resolve, reject) => {
-    const parsedUrl = new URL(url);
-    const isHttps = parsedUrl.protocol === 'https:';
-    const lib = isHttps ? https : http;
-
-    const reqOptions: https.RequestOptions = {
-      hostname: parsedUrl.hostname,
-      port: parsedUrl.port || (isHttps ? 443 : 80),
-      path: parsedUrl.pathname + parsedUrl.search,
-      method: options.method || 'GET',
-      headers: options.headers,
-      rejectUnauthorized: !options.tlsSkipVerify,
-    };
-
-    const req = lib.request(reqOptions, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        resolve({
-          ok: res.statusCode! >= 200 && res.statusCode! < 300,
-          status: res.statusCode!,
-          json: () => Promise.resolve(JSON.parse(data)),
-          text: () => Promise.resolve(data),
-        });
-      });
-    });
-
-    req.on('error', reject);
-    if (options.body) req.write(options.body);
-    req.end();
-  });
-}
 
 // ============================================================================
 // Types
@@ -97,25 +62,20 @@ export interface TracesQueryOptions {
   size?: number;
   serviceName?: string;
   textSearch?: string;
+  cursor?: string; // For pagination: encoded search_after values
 }
 
 export interface TracesResponse {
   spans: NormalizedSpan[];
   total: number;
+  nextCursor?: string | null; // Next page cursor (null if no more pages)
+  hasMore?: boolean; // Whether more results are available
 }
 
 export interface HealthStatus {
   status: 'ok' | 'error';
   error?: string;
   index?: string;
-}
-
-export interface OpenSearchConfig {
-  endpoint: string;
-  username: string;
-  password: string;
-  indexPattern?: string;
-  tlsSkipVerify?: boolean;
 }
 
 // ============================================================================
@@ -199,14 +159,15 @@ export function transformSpan(source: OpenSearchSpanSource): NormalizedSpan {
 // ============================================================================
 
 /**
- * Fetch traces from OpenSearch by trace ID or run IDs
+ * Fetch traces from OpenSearch by trace ID or run IDs.
+ * Uses the SDK Client so authentication (basic / SigV4) is handled automatically.
  */
 export async function fetchTraces(
   options: TracesQueryOptions,
-  config: OpenSearchConfig
+  client: Client,
+  indexPattern: string = 'otel-v1-apm-span-*'
 ): Promise<TracesResponse> {
-  const { traceId, runIds, startTime, endTime, size = 500, serviceName, textSearch } = options;
-  const { endpoint, username, password, indexPattern = 'otel-v1-apm-span-*', tlsSkipVerify } = config;
+  const { traceId, runIds, startTime, endTime, size = 100, serviceName, textSearch, cursor } = options;
 
   // For live tailing, we allow queries with just time range + optional filters
   const hasTimeRange = startTime || endTime;
@@ -216,7 +177,7 @@ export async function fetchTraces(
     throw new Error('Either traceId, runIds, or time range is required');
   }
 
-  debug('TracesService', 'Fetching traces:', { traceId, runIds: runIds?.length, serviceName, textSearch, size });
+  debug('TracesService', 'Fetching traces:', { traceId, runIds: runIds?.length, serviceName, textSearch, size, cursor: cursor ? 'present' : 'none' });
 
   // Build OpenSearch query
   const must: any[] = [];
@@ -262,66 +223,70 @@ export async function fetchTraces(
     });
   }
 
-  const query = {
+  const body: any = {
     size,
     sort: [{ 'startTime': { order: 'desc' } }],  // Most recent first for live tailing
     query: { bool: { must } }
   };
 
-  debug('TracesService', 'OpenSearch query:', JSON.stringify(query, null, 2));
-
-  // Query OpenSearch traces index
-  const response = await makeRequest(`${endpoint}/${indexPattern}/_search`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
-    },
-    body: JSON.stringify(query),
-    tlsSkipVerify
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('[TracesService] OpenSearch error:', response.status, errorText);
-    throw new Error(`OpenSearch error: ${errorText}`);
+  // Add cursor for pagination (search_after in OpenSearch)
+  if (cursor) {
+    try {
+      body.search_after = JSON.parse(decodeURIComponent(cursor));
+      debug('TracesService', 'Using cursor (search_after):', body.search_after);
+    } catch (e) {
+      console.error('[TracesService] Invalid cursor:', e);
+      // Continue without cursor if invalid
+    }
   }
 
-  const data = await response.json();
+  debug('TracesService', 'OpenSearch query:', JSON.stringify(body, null, 2));
+
+  // Query OpenSearch traces index via SDK client
+  const response = await client.search({
+    index: indexPattern,
+    body,
+  });
+
+  const data = response.body;
 
   // Transform spans
-  const spans = (data.hits?.hits || []).map((hit: any) => transformSpan(hit._source));
+  const hits = data.hits?.hits || [];
+  const spans = hits.map((hit: any) => transformSpan(hit._source));
 
-  debug('TracesService', 'Found', spans.length, 'spans');
+  // Generate next cursor from last hit's sort values
+  const lastHit = hits[hits.length - 1];
+  const nextCursor = lastHit?.sort
+    ? encodeURIComponent(JSON.stringify(lastHit.sort))
+    : null;
+
+  // Check if there are more results (when we get exactly 'size' results, assume there might be more)
+  const hasMore = spans.length === size;
+
+  debug('TracesService', 'Found', spans.length, 'spans', hasMore ? '(more available)' : '(end of results)');
 
   return {
     spans,
-    total: data.hits?.total?.value || spans.length
+    total: (typeof data.hits?.total === 'object' ? data.hits.total.value : data.hits?.total) || spans.length,
+    nextCursor,
+    hasMore
   };
 }
 
 /**
- * Check traces index availability
+ * Check traces index availability via SDK client
  */
-export async function checkTracesHealth(config: OpenSearchConfig): Promise<HealthStatus> {
-  const { endpoint, username, password, indexPattern = 'otel-v1-apm-span-*', tlsSkipVerify } = config;
-
-  if (!endpoint || !username || !password) {
-    return { status: 'error', error: 'OpenSearch not configured' };
-  }
-
+export async function checkTracesHealth(
+  client: Client,
+  indexPattern: string = 'otel-v1-apm-span-*'
+): Promise<HealthStatus> {
   try {
-    const response = await makeRequest(
-      `${endpoint}/_cat/indices/${indexPattern}?format=json`,
-      {
-        headers: {
-          'Authorization': `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`
-        },
-        tlsSkipVerify
-      }
-    );
+    const response = await client.cat.indices({
+      index: indexPattern,
+      format: 'json',
+    });
 
-    if (response.ok) {
+    if (response.statusCode === 200) {
       return { status: 'ok', index: indexPattern };
     } else {
       return { status: 'error', index: indexPattern };

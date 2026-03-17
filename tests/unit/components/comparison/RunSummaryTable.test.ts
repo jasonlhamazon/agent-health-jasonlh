@@ -11,7 +11,7 @@ jest.mock('@/lib/constants', () => ({
   DEFAULT_CONFIG: {
     agents: [
       { key: 'pulsar', name: 'Pulsar' },
-      { key: 'holmesgpt', name: 'HolmesGPT' },
+      { key: 'travel-planner', name: 'Travel Planner' },
     ],
     models: {},
   },
@@ -33,22 +33,22 @@ const createMockRun = (overrides: Partial<RunAggregateMetrics> = {}): RunAggrega
 
 describe('RunSummaryTable', () => {
   describe('getPassRateColorClass', () => {
-    it('returns blue for pass rate >= 80', () => {
-      expect(getPassRateColorClass(80)).toBe('text-opensearch-blue');
-      expect(getPassRateColorClass(100)).toBe('text-opensearch-blue');
-      expect(getPassRateColorClass(95)).toBe('text-opensearch-blue');
+    it('returns green for pass rate >= 80', () => {
+      expect(getPassRateColorClass(80)).toBe('text-green-700 dark:text-green-400');
+      expect(getPassRateColorClass(100)).toBe('text-green-700 dark:text-green-400');
+      expect(getPassRateColorClass(95)).toBe('text-green-700 dark:text-green-400');
     });
 
     it('returns amber for pass rate >= 50 and < 80', () => {
-      expect(getPassRateColorClass(50)).toBe('text-amber-400');
-      expect(getPassRateColorClass(79)).toBe('text-amber-400');
-      expect(getPassRateColorClass(65)).toBe('text-amber-400');
+      expect(getPassRateColorClass(50)).toBe('text-amber-700 dark:text-amber-400');
+      expect(getPassRateColorClass(79)).toBe('text-amber-700 dark:text-amber-400');
+      expect(getPassRateColorClass(65)).toBe('text-amber-700 dark:text-amber-400');
     });
 
     it('returns red for pass rate < 50', () => {
-      expect(getPassRateColorClass(0)).toBe('text-red-400');
-      expect(getPassRateColorClass(49)).toBe('text-red-400');
-      expect(getPassRateColorClass(25)).toBe('text-red-400');
+      expect(getPassRateColorClass(0)).toBe('text-red-700 dark:text-red-400');
+      expect(getPassRateColorClass(49)).toBe('text-red-700 dark:text-red-400');
+      expect(getPassRateColorClass(25)).toBe('text-red-700 dark:text-red-400');
     });
   });
 
@@ -326,7 +326,7 @@ describe('RunSummaryTable', () => {
     it('returns null when runs have different values', () => {
       const runs = [
         createMockRun({ runId: 'run-1', agentKey: 'pulsar' }),
-        createMockRun({ runId: 'run-2', agentKey: 'holmesgpt' }),
+        createMockRun({ runId: 'run-2', agentKey: 'travel-planner' }),
       ];
 
       const result = getUniformValue(runs, r => r.agentKey);

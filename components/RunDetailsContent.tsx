@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   X,
   FileText,
@@ -31,7 +32,7 @@ import {
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { EvaluationReport, RunAnnotation, TestCase, Span, TimeRange, TraceMetrics } from '@/types';
+import { EvaluationReport, RunAnnotation, TestCase, TestCasePerformanceMetrics, Span, TimeRange, TraceMetrics } from '@/types';
 import { fetchRunMetrics, formatCost, formatDuration, formatTokens } from '@/services/metrics';
 import { TrajectoryView } from './TrajectoryView';
 import { RawEventsPanel } from './RawEventsPanel';
@@ -46,6 +47,7 @@ import { asyncRunStorage, asyncTestCaseStorage } from '@/services/storage';
 import { callBedrockJudge } from '@/services/evaluation';
 import { tracePollingManager } from '@/services/traces/tracePoller';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -59,6 +61,7 @@ interface RunDetailsContentProps {
   showViewAllReports?: boolean;
   onViewAllReports?: () => void;
   onEditTestCase?: (testCase: TestCase) => void;
+  performanceMetrics?: TestCasePerformanceMetrics;
 }
 
 export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
@@ -67,6 +70,7 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
   showViewAllReports = false,
   onViewAllReports,
   onEditTestCase,
+  performanceMetrics: performanceMetricsProp,
 }) => {
   const [annotations, setAnnotations] = useState<RunAnnotation[]>([]);
   const [newAnnotation, setNewAnnotation] = useState('');
@@ -84,7 +88,9 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
   const [tracesLoading, setTracesLoading] = useState(false);
   const [tracesError, setTracesError] = useState<string | null>(null);
   const [tracesFetched, setTracesFetched] = useState(false);
-  const [activeTab, setActiveTab] = useState('summary');
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab') || 'summary';
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [traceViewMode, setTraceViewMode] = useState<ViewMode>('info');
   const [traceFullscreenOpen, setTraceFullscreenOpen] = useState(false);
 
@@ -161,6 +167,16 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
       {
         onTracesFound: async (spans, updatedReport) => {
           console.info(`[RunDetails] Traces found for report ${liveReport.id}: ${spans.length} spans`);
+
+          // Update trace visualization state so UI reflects traces immediately
+          setTraceSpans(spans);
+          const tree = processSpansIntoTree(spans);
+          setSpanTree(tree);
+          setTimeRange(calculateTimeRange(spans));
+          const rootIds = new Set(tree.map(s => s.spanId));
+          setExpandedSpans(rootIds);
+          setTracesError(null);
+          setTracesFetched(true);
 
           try {
             // Call the Bedrock judge with the trajectory and expectedOutcomes
@@ -287,7 +303,7 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
     } else {
       setTraceMetrics(null);
     }
-  }, [report.runId, isTraceMode]);
+  }, [report.runId, isTraceMode, liveReport.metricsStatus]);
 
   // Reset trace state when report changes (switching test cases)
   // If already on Traces tab, auto-fetch new traces
@@ -330,6 +346,7 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
 
       if (result.spans && result.spans.length > 0) {
         setTraceSpans(result.spans);
+        setTracesError(null);
         const tree = processSpansIntoTree(result.spans);
         setSpanTree(tree);
         setTimeRange(calculateTimeRange(result.spans));
@@ -405,21 +422,32 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
           </p>
         </div>
 
-        {/* Trace Mode: Waiting for traces banner */}
+        {/* Trace Mode: Waiting for traces / running judge banner */}
         {!reportLoading && liveReport.metricsStatus === 'pending' && (
           <Card className="bg-yellow-50 dark:bg-yellow-500/10 border-yellow-300 dark:border-yellow-500/30 mt-4">
             <CardContent className="p-3 flex items-center gap-3">
               <Loader2 className="animate-spin text-yellow-700 dark:text-yellow-400" size={18} />
               <div>
-                <div className="text-sm font-medium text-yellow-700 dark:text-yellow-400">Waiting for traces to become available...</div>
-                <div className="text-xs text-muted-foreground">
-                  Traces take ~5 minutes to propagate after the run completes.
-                  {liveReport.traceFetchAttempts && (
-                    <span className="ml-2">
-                      (Attempt {liveReport.traceFetchAttempts}/20)
-                    </span>
-                  )}
-                </div>
+                {traceSpans.length > 0 ? (
+                  <>
+                    <div className="text-sm font-medium text-yellow-700 dark:text-yellow-400">Traces received. Running LLM judge evaluation...</div>
+                    <div className="text-xs text-muted-foreground">
+                      {traceSpans.length} spans captured. Evaluation results will appear shortly.
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-sm font-medium text-yellow-700 dark:text-yellow-400">Waiting for traces to become available...</div>
+                    <div className="text-xs text-muted-foreground">
+                      Traces take ~5 minutes to propagate after the run completes.
+                      {liveReport.traceFetchAttempts && (
+                        <span className="ml-2">
+                          (Attempt {liveReport.traceFetchAttempts}/20)
+                        </span>
+                      )}
+                    </div>
+                  </>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -434,6 +462,21 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
                 <div className="text-sm font-medium text-red-700 dark:text-red-400">Failed to fetch traces</div>
                 <div className="text-xs text-muted-foreground">
                   {liveReport.traceError || 'Unknown error'}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Evaluation Error: Agent endpoint failed */}
+        {liveReport.status === 'failed' && liveReport.llmJudgeReasoning && (
+          <Card className="bg-red-500/10 border-red-500/30 mt-4">
+            <CardContent className="p-3 flex items-start gap-3">
+              <AlertCircle className="text-red-400 shrink-0 mt-0.5" size={18} />
+              <div className="flex-1">
+                <div className="text-sm font-medium text-red-400 mb-1">Evaluation Failed</div>
+                <div className="text-xs text-muted-foreground whitespace-pre-wrap">
+                  {liveReport.llmJudgeReasoning}
                 </div>
               </div>
             </CardContent>
@@ -464,8 +507,11 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
                 <Loader2 className="animate-spin text-muted-foreground" size={12} />
               ) : liveReport.metricsStatus === 'pending' ? (
                 <div className="flex items-center gap-1 text-xs font-semibold text-yellow-700 dark:text-yellow-400">
-                  <Clock size={12} />
-                  PENDING
+                  {traceSpans.length > 0 ? (
+                    <><Loader2 className="animate-spin" size={12} /> JUDGING</>
+                  ) : (
+                    <><Clock size={12} /> PENDING</>
+                  )}
                 </div>
               ) : (
                 <div className={`flex items-center gap-1 text-xs font-semibold ${
@@ -518,6 +564,11 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
                   ) : (
                     <div className="text-xs font-semibold text-purple-700 dark:text-purple-400">
                       {traceMetrics ? formatDuration(traceMetrics.durationMs) : '—'}
+                      {(performanceMetricsProp || report.performanceMetrics)?.agentDurationMs != null && (
+                        <span className="text-[10px] font-normal text-muted-foreground ml-1">
+                          (agent {formatDuration((performanceMetricsProp || report.performanceMetrics)!.agentDurationMs)})
+                        </span>
+                      )}
                     </div>
                   )}
                 </CardContent>
@@ -621,6 +672,55 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
             </Card>
           </div>
         )}
+
+        {/* Server Performance Metrics Row (per-test-case) */}
+        {(performanceMetricsProp || report.performanceMetrics) && (() => {
+          const perfMetrics = performanceMetricsProp || report.performanceMetrics!;
+          return (
+          <div className="grid grid-cols-8 gap-2 mt-2">
+            <Card className="bg-muted/50 col-span-2">
+              <CardContent className="p-2">
+                <div className="text-[10px] text-muted-foreground mb-0.5 flex items-center gap-1">
+                  Eval Duration
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info size={10} className="text-muted-foreground/60 cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[200px] text-xs">
+                        Total server-side wall-clock time: agent call + judge evaluation + overhead
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <div className="text-xs font-semibold text-purple-700 dark:text-purple-400">
+                  {formatDuration(perfMetrics.durationMs)}
+                </div>
+              </CardContent>
+            </Card>
+            {perfMetrics.judgeDurationMs != null && (
+              <Card className="bg-muted/50 col-span-2">
+                <CardContent className="p-2">
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Judge Time</div>
+                  <div className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                    {formatDuration(perfMetrics.judgeDurationMs)}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            {perfMetrics.judgeAttempts != null && perfMetrics.judgeAttempts > 1 && (
+              <Card className="bg-muted/50 col-span-2">
+                <CardContent className="p-2">
+                  <div className="text-[10px] text-muted-foreground mb-0.5">Judge Retries</div>
+                  <div className="text-xs font-semibold text-red-700 dark:text-red-400">
+                    {perfMetrics.judgeAttempts}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+          );
+        })()}
       </div>
 
       {/* Tabs */}
@@ -839,7 +939,18 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
                 <div className="flex items-center justify-between flex-shrink-0">
                   <h3 className="text-lg font-semibold">Traces</h3>
                   {spanTree.length > 0 && !tracesLoading && (
-                    <ViewToggle viewMode={traceViewMode} onChange={setTraceViewMode} />
+                    <div className="flex items-center gap-2">
+                      <ViewToggle viewMode={traceViewMode} onChange={setTraceViewMode} />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setTraceFullscreenOpen(true)}
+                        className="gap-1.5"
+                      >
+                        <Maximize2 size={14} />
+                        Fullscreen
+                      </Button>
+                    </div>
                   )}
                 </div>
 
@@ -851,8 +962,8 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
                   </div>
                 )}
 
-                {/* Error state */}
-                {tracesError && !tracesLoading && (
+                {/* Error state - only show when NOT in pending polling state */}
+                {tracesError && !tracesLoading && liveReport.metricsStatus !== 'pending' && (
                   <Card className="bg-red-500/10 border-red-500/30">
                     <CardContent className="p-4 flex items-center gap-3">
                       <AlertCircle className="text-red-400" size={18} />

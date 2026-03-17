@@ -16,9 +16,11 @@ import {
   getSampleSpansForRunIds,
   getSampleSpansByTraceId,
   getAllSampleTraceSpans,
+  getAllSampleTraceSpansWithRecentTimestamps,
   isSampleTraceId,
 } from '../../cli/demo/sampleTraces.js';
 import { resolveObservabilityConfig, DEFAULT_OTEL_INDEXES } from '../middleware/dataSourceConfig.js';
+import { createOpenSearchClient } from '../services/opensearchClientFactory.js';
 import type { Span } from '../../types/index.js';
 
 const router = Router();
@@ -28,7 +30,7 @@ const router = Router();
  */
 router.post('/api/traces', async (req: Request, res: Response) => {
   try {
-    const { traceId, runIds, startTime, endTime, size = 500, serviceName, textSearch } = req.body;
+    const { traceId, runIds, startTime, endTime, size = 100, serviceName, textSearch, cursor } = req.body;
 
     // Validate request - allow time range queries for live tailing
     const hasTimeRange = startTime || endTime;
@@ -52,36 +54,67 @@ router.post('/api/traces', async (req: Request, res: Response) => {
     // 2. Query live OpenSearch traces (independent of sample logic)
     let realSpans: Span[] = [];
     let warning: string | undefined;
+    let nextCursor: string | null = null;
+    let hasMore: boolean = false;
     const config = resolveObservabilityConfig(req);
 
     if (config && (traceId || (runIds && runIds.length > 0) || startTime || endTime)) {
+      let client;
       try {
+        client = createOpenSearchClient(config);
         const indexPattern = config.indexes?.traces || DEFAULT_OTEL_INDEXES.traces;
 
         const result = await fetchTraces(
-          { traceId, runIds, startTime, endTime, size, serviceName, textSearch },
-          {
-            endpoint: config.endpoint,
-            username: config.username,
-            password: config.password,
-            indexPattern,
-            tlsSkipVerify: config.tlsSkipVerify
-          }
+          { traceId, runIds, startTime, endTime, size, serviceName, textSearch, cursor },
+          client,
+          indexPattern
         );
 
         realSpans = (result.spans || []) as Span[];
+        nextCursor = result.nextCursor || null;
+        hasMore = result.hasMore || false;
       } catch (e: any) {
         console.warn('[TracesAPI] OpenSearch query failed:', e.message);
         warning = e.message;
+      } finally {
+        if (client) {
+          await client.close().catch(() => {});
+        }
       }
     } else if (!config) {
+      // No observability cluster configured
+      if (hasTimeRange && !hasIdFilter) {
+        // Time-range browse query: show demo traces as fallback
+        sampleSpans = getAllSampleTraceSpansWithRecentTimestamps();
+
+        if (serviceName) {
+          sampleSpans = sampleSpans.filter(
+            s => s.attributes['service.name'] === serviceName
+          );
+        }
+        if (textSearch) {
+          const searchLower = textSearch.toLowerCase();
+          sampleSpans = sampleSpans.filter(s => {
+            if (s.name.toLowerCase().includes(searchLower)) return true;
+            return Object.values(s.attributes).some(
+              v => typeof v === 'string' && v.toLowerCase().includes(searchLower)
+            );
+          });
+        }
+      }
       warning = 'Observability data source not configured';
     }
 
     // Merge: sample spans first, then real spans
     const allSpans = [...sampleSpans, ...realSpans];
 
-    res.json({ spans: allSpans, total: allSpans.length, warning });
+    res.json({
+      spans: allSpans,
+      total: allSpans.length,
+      nextCursor,
+      hasMore,
+      warning
+    });
 
   } catch (error: any) {
     console.error('[TracesAPI] Error:', error);
@@ -106,17 +139,19 @@ router.get('/api/traces/health', async (req: Request, res: Response) => {
       });
     }
 
-    const indexPattern = config.indexes?.traces || DEFAULT_OTEL_INDEXES.traces;
+    let client;
+    try {
+      client = createOpenSearchClient(config);
+      const indexPattern = config.indexes?.traces || DEFAULT_OTEL_INDEXES.traces;
 
-    // Call traces service to check health
-    const result = await checkTracesHealth({
-      endpoint: config.endpoint,
-      username: config.username,
-      password: config.password,
-      indexPattern
-    });
-
-    res.json(result);
+      // Call traces service to check health
+      const result = await checkTracesHealth(client, indexPattern);
+      res.json(result);
+    } finally {
+      if (client) {
+        await client.close().catch(() => {});
+      }
+    }
   } catch (error: any) {
     res.json({ status: 'error', error: error.message });
   }

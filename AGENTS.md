@@ -33,9 +33,53 @@ npm test              # Run all tests - must pass before pushing
 
 Update `CHANGELOG.md` under `## [Unreleased]` with your changes:
 - `### Added` - New features
-- `### Changed` - Changes to existing functionality  
+- `### Changed` - Changes to existing functionality
 - `### Fixed` - Bug fixes
 - `### Security` - Security fixes
+
+## Before Raising a PR
+
+All PRs are validated by CI. Fix these locally before pushing to avoid failed checks:
+
+```bash
+# 1. Build and test
+npm run build:all && npm run test:all
+
+# 2. Security scan - no high/critical vulnerabilities
+npm audit --audit-level=high
+
+# 3. Verify DCO signoff on all commits
+git log origin/main..HEAD | grep "Signed-off-by"
+# If missing, fix with: git rebase origin/main --signoff
+
+# 4. Verify changelog is updated
+grep -A5 "## \[Unreleased\]" CHANGELOG.md
+```
+
+**Pre-PR Checklist:**
+- [ ] All commits have DCO signoff (`git commit -s`)
+- [ ] `CHANGELOG.md` updated under `## [Unreleased]` with PR link
+- [ ] `npm run build:all` succeeds
+- [ ] `npm run test:all` passes
+- [ ] `npm audit --audit-level=high` reports no vulnerabilities
+- [ ] New source files have SPDX license headers
+
+### CLI: Import Test Cases from JSON
+
+The `benchmark` command supports importing test cases from a JSON file via `-f` / `--file`:
+
+```bash
+# Import and benchmark in one step
+npx @opensearch-project/agent-health benchmark -f ./test-cases.json -a my-agent
+
+# With a custom benchmark name
+npx @opensearch-project/agent-health benchmark -f ./test-cases.json -n "My Benchmark" -a my-agent
+
+# Export produces import-compatible JSON (round-trip support)
+npx @opensearch-project/agent-health export -b my-benchmark -o test-cases.json
+```
+
+The JSON file must be an array of test case objects with required fields: `name`, `category`, `difficulty`, `initialPrompt`, `expectedOutcomes`.
 
 ## Environment Setup
 
@@ -48,6 +92,9 @@ Copy `.env.example` to `.env`. Key variables:
 - `OPENSEARCH_LOGS_*` - OpenSearch cluster for logs/traces
 
 ## Architecture
+
+> **Full documentation:** See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture patterns.
+> **Performance optimization:** See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for performance optimizations in the Benchmark Runs Overview page.
 
 ### Two-Server Architecture
 
@@ -119,6 +166,87 @@ Environment variables are exposed via `vite.config.ts` using `loadEnv()`. Access
 - Simpler local agent without ML-Commons dependencies
 - Endpoint configured via `LANGGRAPH_ENDPOINT`
 
+## OpenTelemetry Instrumentation Standards
+
+**CRITICAL:** All agents integrating with Agent Health MUST follow OpenTelemetry semantic conventions for instrumentation data.
+
+### Required Semantic Conventions
+
+Agent instrumentation MUST use the standardized attributes defined in:
+- **Gen AI Conventions**: https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/
+
+### Key Requirements
+
+1. **Span Naming**: Follow the `gen_ai.operation.name` convention
+   - Use standard operation types: `chat`, `completion`, `embedding`, etc.
+
+2. **Required Attributes**:
+   - `gen_ai.system` - AI system identifier (e.g., `openai`, `anthropic`, `aws.bedrock`)
+   - `gen_ai.request.model` - Model identifier
+   - `gen_ai.operation.name` - Operation type
+   - `gen_ai.request.temperature` - Sampling temperature (if applicable)
+   - `gen_ai.request.max_tokens` - Maximum tokens requested
+   - `gen_ai.usage.prompt_tokens` - Input token count
+   - `gen_ai.usage.completion_tokens` - Output token count
+
+3. **Span Hierarchy**:
+   - Root span: Agent execution
+   - Child spans: LLM calls, tool invocations, retrieval operations
+   - Follow parent-child relationships for accurate trace visualization
+
+4. **Tool Invocation Spans**:
+   - Use `gen_ai.tool.name` for tool identification
+   - Include `gen_ai.tool.description` for context
+   - Capture tool input/output as span events
+
+### Example Instrumentation
+
+```python
+from opentelemetry import trace
+from opentelemetry.trace import SpanKind
+
+tracer = trace.get_tracer(__name__)
+
+with tracer.start_as_current_span(
+    "chat",
+    kind=SpanKind.CLIENT,
+    attributes={
+        "gen_ai.system": "anthropic",
+        "gen_ai.request.model": "claude-sonnet-4",
+        "gen_ai.operation.name": "chat",
+        "gen_ai.request.temperature": 0.7,
+        "gen_ai.request.max_tokens": 4096,
+    }
+) as span:
+    response = call_llm(prompt)
+
+    span.set_attributes({
+        "gen_ai.usage.prompt_tokens": response.usage.input_tokens,
+        "gen_ai.usage.completion_tokens": response.usage.output_tokens,
+    })
+```
+
+### Why This Matters
+
+- **Trace Visualization**: Agent Health categorizes spans based on these attributes
+- **Metrics Calculation**: Token counts and costs are computed from semantic attributes
+- **Cross-Agent Comparison**: Standardized attributes enable fair comparisons
+- **Debugging**: Consistent naming helps identify issues across different agents
+
+### Validation
+
+Use the Agent Health trace viewer to validate your instrumentation:
+1. Run an evaluation with `useTraces: true`
+2. View the trace in the Traces page
+3. Verify spans have correct `gen_ai.*` attributes
+4. Check that span hierarchy matches expected flow
+
+### Additional Resources
+
+- [OpenTelemetry Gen AI Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/)
+- [OpenTelemetry Span Attributes Registry](https://opentelemetry.io/docs/specs/semconv/registry/attributes/gen-ai/)
+- [Agent Health Trace Categorization](./services/traces/spanCategorization.ts)
+
 ## Testing
 
 Tests use Jest with ts-jest. Test files are in `__tests__/` directories or named `*.test.ts`.
@@ -141,6 +269,32 @@ CI enforces minimum coverage thresholds configured in `jest.config.cjs`:
 - **Statements**: 90%
 - **Functions**: 80%
 - **Branches**: 80%
+
+### Integration Test Cleanup
+
+**Always delete data created during integration tests.** Integration tests that call the storage API write JSON files to `agent-health-data/` on disk (the file-based storage backend). If tests don't clean up, these files accumulate in the working directory and appear as untracked files in git.
+
+Track every created ID and delete it in `afterAll`:
+
+```typescript
+const createdTestCaseIds: string[] = [];
+const createdBenchmarkIds: string[] = [];
+
+afterAll(async () => {
+  for (const id of createdTestCaseIds) {
+    await fetch(`${BASE_URL}/api/storage/test-cases/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+  }
+  for (const id of createdBenchmarkIds) {
+    await fetch(`${BASE_URL}/api/storage/benchmarks/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+  }
+});
+
+// In each test, push created IDs immediately after creation:
+const result = await client.bulkCreateTestCases(testCases);
+createdTestCaseIds.push(...result.testCases.map(tc => tc.id));
+```
+
+The `agent-health-data/` directory is gitignored for this reason — it is runtime state, not source code.
 
 ## CI/CD
 

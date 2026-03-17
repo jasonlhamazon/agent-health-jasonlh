@@ -3,9 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { AlertTriangle, Trash2, Database, CheckCircle2, XCircle, Upload, Download, Loader2, Server, Plus, Edit2, X, Save, ExternalLink, Eye, EyeOff, ChevronDown, ChevronRight, RefreshCw, Palette } from 'lucide-react';
-import { isDebugEnabled, setDebugEnabled } from '@/lib/debug';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
+import { AlertTriangle, Trash2, Database, CheckCircle2, XCircle, Upload, Download, Loader2, Server, Plus, Edit2, X, Save, ExternalLink, Eye, EyeOff, ChevronDown, ChevronRight, RefreshCw, Palette, Circle } from 'lucide-react';
 import { getTheme, setTheme, type Theme } from '@/lib/theme';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
@@ -13,6 +13,9 @@ import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import type { ConnectorProtocol, ClusterAuthType } from '@/types';
 import { storageAdmin } from '@/services/storage/opensearchClient';
 import {
   hasLocalStorageData,
@@ -29,6 +32,7 @@ import {
   clearStorageConfig,
   clearObservabilityConfig,
   type ConfigStatus,
+  type SaveStorageConfigResult,
 } from '@/lib/dataSourceConfig';
 import { DEFAULT_CONFIG, refreshConfig } from '@/lib/constants';
 import { ENV_CONFIG } from '@/lib/config';
@@ -45,6 +49,8 @@ interface AgentEndpoint {
   id: string;
   name: string;
   endpoint: string;
+  connectorType?: ConnectorProtocol;
+  useTraces?: boolean;
 }
 
 const LEGACY_STORAGE_KEY = 'agenteval_custom_endpoints';
@@ -55,11 +61,17 @@ const LEGACY_STORAGE_KEY = 'agenteval_custom_endpoints';
 function getCustomEndpointsFromConfig(): AgentEndpoint[] {
   return DEFAULT_CONFIG.agents
     .filter(a => a.isCustom)
-    .map(a => ({ id: a.key, name: a.name, endpoint: a.endpoint }));
+    .map(a => ({
+      id: a.key,
+      name: a.name,
+      endpoint: a.endpoint,
+      connectorType: a.connectorType,
+      useTraces: a.useTraces,
+    }));
 }
 
 export const SettingsPage: React.FC = () => {
-  console.log('SettingsPage loaded - built-in badge should be BLUE');
+
   const [debugMode, setDebugMode] = useState(false);
   const [currentTheme, setCurrentTheme] = useState<Theme>('dark');
   const [storageStats, setStorageStats] = useState<StorageStats | null>(null);
@@ -78,19 +90,29 @@ export const SettingsPage: React.FC = () => {
   const [editingEndpointId, setEditingEndpointId] = useState<string | null>(null);
   const [newEndpointName, setNewEndpointName] = useState('');
   const [newEndpointUrl, setNewEndpointUrl] = useState('');
+  const [newConnectorType, setNewConnectorType] = useState<ConnectorProtocol>('agui-streaming');
+  const [newUseTraces, setNewUseTraces] = useState(false);
   const [endpointUrlError, setEndpointUrlError] = useState<string | null>(null);
 
   // Data source configuration state (form inputs - not stored values)
   const [storageConfig, setStorageConfigState] = useState({
     endpoint: '',
+    authType: 'basic' as ClusterAuthType,
     username: '',
     password: '',
+    awsProfile: '',
+    awsRegion: '',
+    awsService: 'es' as 'es' | 'aoss',
     tlsSkipVerify: false,
   });
   const [observabilityConfig, setObservabilityConfigState] = useState({
     endpoint: '',
+    authType: 'basic' as ClusterAuthType,
     username: '',
     password: '',
+    awsProfile: '',
+    awsRegion: '',
+    awsService: 'es' as 'es' | 'aoss',
     tlsSkipVerify: false,
     tracesIndex: '',
     logsIndex: '',
@@ -105,6 +127,14 @@ export const SettingsPage: React.FC = () => {
   const [storageTestMessage, setStorageTestMessage] = useState('');
   const [observabilityTestStatus, setObservabilityTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [observabilityTestMessage, setObservabilityTestMessage] = useState('');
+
+  // Index fix modal state
+  const [indexFixState, setIndexFixState] = useState<{
+    visible: boolean;
+    progress: Array<{ indexName: string; status: string; documentCount?: number; error?: string }>;
+    done: boolean;
+    error?: string;
+  }>({ visible: false, progress: [], done: false });
 
   const loadStorageStats = useCallback(async () => {
     setIsLoading(true);
@@ -133,22 +163,39 @@ export const SettingsPage: React.FC = () => {
     }
   }, []);
 
+  // Sentinel value used in the password field to mean "a password is stored on
+  // the server; the user has not changed it yet."  It is never sent to the server —
+  // we convert it back to undefined so the server-side ?? merge keeps the stored value.
+  const PASSWORD_STORED_SENTINEL = '__STORED__';
+
   // Load config status from server
   const loadConfigStatus = useCallback(async () => {
     try {
       const status = await getConfigStatus();
       setConfigStatus(status);
-      // Pre-fill form with current endpoint (but never passwords)
+      // Pre-fill form with endpoint + username; use sentinel for password when stored.
       if (status.storage.endpoint) {
         setStorageConfigState(prev => ({
           ...prev,
           endpoint: status.storage.endpoint || '',
+          authType: status.storage.authType || 'basic',
+          username: status.storage.username || '',
+          password: status.storage.hasPassword ? PASSWORD_STORED_SENTINEL : '',
+          awsProfile: status.storage.awsProfile || '',
+          awsRegion: status.storage.awsRegion || '',
+          awsService: status.storage.awsService || 'es',
         }));
       }
       if (status.observability.endpoint) {
         setObservabilityConfigState(prev => ({
           ...prev,
           endpoint: status.observability.endpoint || '',
+          authType: status.observability.authType || 'basic',
+          username: status.observability.username || '',
+          password: status.observability.hasPassword ? PASSWORD_STORED_SENTINEL : '',
+          awsProfile: status.observability.awsProfile || '',
+          awsRegion: status.observability.awsRegion || '',
+          awsService: status.observability.awsService || 'es',
           tracesIndex: status.observability.indexes?.traces || '',
           logsIndex: status.observability.indexes?.logs || '',
           metricsIndex: status.observability.indexes?.metrics || '',
@@ -159,8 +206,58 @@ export const SettingsPage: React.FC = () => {
     }
   }, []);
 
+  // Scroll to section if URL hash is present (e.g., /settings#storage)
+  const location = useLocation();
+  const hasScrolled = useRef(false);
   useEffect(() => {
-    setDebugMode(isDebugEnabled());
+    if (location.hash && !hasScrolled.current) {
+      const id = location.hash.replace('#', '');
+      // Delay to allow the page to render before scrolling
+      const timer = setTimeout(() => {
+        const el = document.getElementById(id);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          hasScrolled.current = true;
+        }
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [location.hash, isLoading]);
+
+  useEffect(() => {
+    // Load debug state from server API (single source of truth: agent-health.config.json)
+    // and sync to localStorage for fast browser-side checks
+    fetch(`${ENV_CONFIG.backendUrl}/api/debug`)
+      .then(res => res.json())
+      .then(data => {
+        setDebugMode(data.enabled);
+        localStorage.setItem('agenteval_debug', String(data.enabled));
+
+        // IMPORTANT: Also sync DEBUG_PERFORMANCE with debug mode state
+        if (data.enabled) {
+          localStorage.setItem('DEBUG_PERFORMANCE', 'true');
+        } else {
+          localStorage.removeItem('DEBUG_PERFORMANCE');
+        }
+      })
+      .catch(() => {
+        // Fallback to localStorage if API fails
+        try {
+          const cached = localStorage.getItem('agenteval_debug') === 'true';
+          setDebugMode(cached);
+
+          // Also sync DEBUG_PERFORMANCE
+          if (cached) {
+            localStorage.setItem('DEBUG_PERFORMANCE', 'true');
+          } else {
+            localStorage.removeItem('DEBUG_PERFORMANCE');
+          }
+        } catch {
+          setDebugMode(false);
+          localStorage.removeItem('DEBUG_PERFORMANCE');
+        }
+      });
+
     setCurrentTheme(getTheme());
     loadStorageStats();
     loadConfigStatus();
@@ -230,7 +327,12 @@ export const SettingsPage: React.FC = () => {
       const response = await fetch(`${ENV_CONFIG.backendUrl}/api/agents/custom`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newEndpointName.trim(), endpoint: newEndpointUrl.trim() }),
+        body: JSON.stringify({
+          name: newEndpointName.trim(),
+          endpoint: newEndpointUrl.trim(),
+          connectorType: newConnectorType,
+          useTraces: newUseTraces,
+        }),
       });
       if (!response.ok) {
         const err = await response.json();
@@ -246,6 +348,8 @@ export const SettingsPage: React.FC = () => {
 
     setNewEndpointName('');
     setNewEndpointUrl('');
+    setNewConnectorType('agui-streaming');
+    setNewUseTraces(false);
     setEndpointUrlError(null);
     setIsAddingEndpoint(false);
   };
@@ -265,7 +369,12 @@ export const SettingsPage: React.FC = () => {
       const response = await fetch(`${ENV_CONFIG.backendUrl}/api/agents/custom`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newEndpointName.trim(), endpoint: newEndpointUrl.trim() }),
+        body: JSON.stringify({
+          name: newEndpointName.trim(),
+          endpoint: newEndpointUrl.trim(),
+          connectorType: newConnectorType,
+          useTraces: newUseTraces,
+        }),
       });
       if (!response.ok) {
         const err = await response.json();
@@ -282,6 +391,8 @@ export const SettingsPage: React.FC = () => {
     setEditingEndpointId(null);
     setNewEndpointName('');
     setNewEndpointUrl('');
+    setNewConnectorType('agui-streaming');
+    setNewUseTraces(false);
     setEndpointUrlError(null);
   };
 
@@ -301,6 +412,8 @@ export const SettingsPage: React.FC = () => {
     setEditingEndpointId(endpoint.id);
     setNewEndpointName(endpoint.name);
     setNewEndpointUrl(endpoint.endpoint);
+    setNewConnectorType(endpoint.connectorType ?? 'agui-streaming');
+    setNewUseTraces(endpoint.useTraces ?? false);
   };
 
   const cancelEdit = () => {
@@ -308,21 +421,66 @@ export const SettingsPage: React.FC = () => {
     setIsAddingEndpoint(false);
     setNewEndpointName('');
     setNewEndpointUrl('');
+    setNewConnectorType('agui-streaming');
+    setNewUseTraces(false);
     setEndpointUrlError(null);
   };
 
   const handleDebugToggle = async (checked: boolean) => {
-    setDebugEnabled(checked);
+    // Update local state immediately for responsiveness
     setDebugMode(checked);
-    // Sync debug state to the server so server-side logging is also toggled
+
+    // Update localStorage for BOTH debug logging AND performance monitoring
     try {
-      await fetch(`${ENV_CONFIG.backendUrl}/api/debug`, {
+      localStorage.setItem('agenteval_debug', String(checked));
+
+      // Also control performance monitoring with the same toggle
+      if (checked) {
+        localStorage.setItem('DEBUG_PERFORMANCE', 'true');
+      } else {
+        localStorage.removeItem('DEBUG_PERFORMANCE');
+      }
+    } catch {
+      // Ignore localStorage errors
+    }
+
+    // Persist to server (agent-health.config.json) - single source of truth
+    try {
+      const response = await fetch(`${ENV_CONFIG.backendUrl}/api/debug`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: checked }),
       });
-    } catch {
-      // Best effort - server may not be running
+
+      if (!response.ok) {
+        throw new Error('Failed to update debug mode');
+      }
+
+      const data = await response.json();
+      setDebugMode(data.enabled); // Sync with server's actual state
+      localStorage.setItem('agenteval_debug', String(data.enabled)); // Sync localStorage too
+
+      // Sync performance monitoring too
+      if (data.enabled) {
+        localStorage.setItem('DEBUG_PERFORMANCE', 'true');
+      } else {
+        localStorage.removeItem('DEBUG_PERFORMANCE');
+      }
+    } catch (error) {
+      console.error('Failed to toggle debug mode:', error);
+      // Revert to server state on error
+      fetch(`${ENV_CONFIG.backendUrl}/api/debug`)
+        .then(res => res.json())
+        .then(data => {
+          setDebugMode(data.enabled);
+          localStorage.setItem('agenteval_debug', String(data.enabled));
+          if (data.enabled) {
+            localStorage.setItem('DEBUG_PERFORMANCE', 'true');
+          } else {
+            localStorage.removeItem('DEBUG_PERFORMANCE');
+          }
+        })
+        .catch(() => {}); // Ignore fetch error, keep local state
     }
   };
 
@@ -400,13 +558,31 @@ export const SettingsPage: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           endpoint: storageConfig.endpoint,
+          authType: storageConfig.authType !== 'basic' ? storageConfig.authType : undefined,
           username: storageConfig.username || undefined,
-          password: storageConfig.password || undefined,
+          // Strip sentinel — server will use its stored password for the test
+          password: storageConfig.password === PASSWORD_STORED_SENTINEL
+            ? undefined
+            : (storageConfig.password || undefined),
+          awsProfile: storageConfig.awsProfile || undefined,
+          awsRegion: storageConfig.awsRegion || undefined,
+          awsService: storageConfig.awsService !== 'es' ? storageConfig.awsService : undefined,
           tlsSkipVerify: storageConfig.tlsSkipVerify || undefined,
         }),
       });
 
-      const result = await response.json();
+      if (!response.ok && response.status === 0) {
+        setStorageTestStatus('error');
+        setStorageTestMessage('Could not reach the backend server. Make sure it is running.');
+        return;
+      }
+
+      const result = await response.json().catch(() => null);
+      if (!result) {
+        setStorageTestStatus('error');
+        setStorageTestMessage(`Backend returned an invalid response (HTTP ${response.status}). Make sure the server is running.`);
+        return;
+      }
       if (result.status === 'ok') {
         setStorageTestStatus('success');
         setStorageTestMessage(`Connected to ${result.clusterName || 'cluster'} (${result.clusterStatus})`);
@@ -427,19 +603,38 @@ export const SettingsPage: React.FC = () => {
     }
 
     try {
-      await saveStorageConfig({
+      // Strip sentinel — an unchanged sentinel means "keep whatever is stored";
+      // the server-side ?? merge will preserve it.
+      const storagePasswordToSend = storageConfig.password === PASSWORD_STORED_SENTINEL
+        ? undefined
+        : (storageConfig.password || undefined);
+
+      const result = await saveStorageConfig({
         endpoint: storageConfig.endpoint,
+        authType: storageConfig.authType !== 'basic' ? storageConfig.authType : undefined,
         username: storageConfig.username || undefined,
-        password: storageConfig.password || undefined,
+        password: storagePasswordToSend,
+        awsProfile: storageConfig.awsProfile || undefined,
+        awsRegion: storageConfig.awsRegion || undefined,
+        awsService: storageConfig.awsService !== 'es' ? storageConfig.awsService : undefined,
         tlsSkipVerify: storageConfig.tlsSkipVerify,
       });
+
+      // Show fix results in modal if reindexing was performed
+      if (result.fixResults && result.fixResults.length > 0) {
+        setIndexFixState({
+          visible: true,
+          progress: result.fixResults,
+          done: true,
+        });
+      }
+
       setStorageTestStatus('idle');
       setStorageTestMessage('Configuration saved to server');
-      // Clear password field after save (never keep passwords in form state)
-      setStorageConfigState(prev => ({ ...prev, password: '' }));
-      setTimeout(() => setStorageTestMessage(''), 3000);
+      // Reload to re-apply sentinel state for any stored credentials
       loadStorageStats();
       loadConfigStatus();
+      setTimeout(() => setStorageTestMessage(''), 3000);
     } catch (error) {
       setStorageTestStatus('error');
       setStorageTestMessage(error instanceof Error ? error.message : 'Failed to save configuration');
@@ -452,7 +647,7 @@ export const SettingsPage: React.FC = () => {
     }
     try {
       await clearStorageConfig();
-      setStorageConfigState({ endpoint: '', username: '', password: '', tlsSkipVerify: false });
+      setStorageConfigState({ endpoint: '', authType: 'basic', username: '', password: '', awsProfile: '', awsRegion: '', awsService: 'es', tlsSkipVerify: false });
       setStorageTestStatus('idle');
       setStorageTestMessage('Configuration cleared - using environment variables');
       setTimeout(() => setStorageTestMessage(''), 3000);
@@ -480,8 +675,15 @@ export const SettingsPage: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           endpoint: observabilityConfig.endpoint,
+          authType: observabilityConfig.authType !== 'basic' ? observabilityConfig.authType : undefined,
           username: observabilityConfig.username || undefined,
-          password: observabilityConfig.password || undefined,
+          // Strip sentinel — server will use its stored password for the test
+          password: observabilityConfig.password === PASSWORD_STORED_SENTINEL
+            ? undefined
+            : (observabilityConfig.password || undefined),
+          awsProfile: observabilityConfig.awsProfile || undefined,
+          awsRegion: observabilityConfig.awsRegion || undefined,
+          awsService: observabilityConfig.awsService !== 'es' ? observabilityConfig.awsService : undefined,
           tlsSkipVerify: observabilityConfig.tlsSkipVerify || undefined,
           indexes: {
             traces: observabilityConfig.tracesIndex || undefined,
@@ -491,7 +693,18 @@ export const SettingsPage: React.FC = () => {
         }),
       });
 
-      const result = await response.json();
+      if (!response.ok && response.status === 0) {
+        setObservabilityTestStatus('error');
+        setObservabilityTestMessage('Could not reach the backend server. Make sure it is running.');
+        return;
+      }
+
+      const result = await response.json().catch(() => null);
+      if (!result) {
+        setObservabilityTestStatus('error');
+        setObservabilityTestMessage(`Backend returned an invalid response (HTTP ${response.status}). Make sure the server is running.`);
+        return;
+      }
       if (result.status === 'ok') {
         setObservabilityTestStatus('success');
         const msg = result.message
@@ -515,10 +728,19 @@ export const SettingsPage: React.FC = () => {
     }
 
     try {
+      // Strip sentinel — same logic as storage save above.
+      const obsPasswordToSend = observabilityConfig.password === PASSWORD_STORED_SENTINEL
+        ? undefined
+        : (observabilityConfig.password || undefined);
+
       await saveObservabilityConfig({
         endpoint: observabilityConfig.endpoint,
+        authType: observabilityConfig.authType !== 'basic' ? observabilityConfig.authType : undefined,
         username: observabilityConfig.username || undefined,
-        password: observabilityConfig.password || undefined,
+        password: obsPasswordToSend,
+        awsProfile: observabilityConfig.awsProfile || undefined,
+        awsRegion: observabilityConfig.awsRegion || undefined,
+        awsService: observabilityConfig.awsService !== 'es' ? observabilityConfig.awsService : undefined,
         tlsSkipVerify: observabilityConfig.tlsSkipVerify,
         indexes: {
           traces: observabilityConfig.tracesIndex || undefined,
@@ -528,10 +750,9 @@ export const SettingsPage: React.FC = () => {
       });
       setObservabilityTestStatus('idle');
       setObservabilityTestMessage('Configuration saved to server');
-      // Clear password field after save (never keep passwords in form state)
-      setObservabilityConfigState(prev => ({ ...prev, password: '' }));
-      setTimeout(() => setObservabilityTestMessage(''), 3000);
+      // Reload to re-apply sentinel state for any stored credentials
       loadConfigStatus();
+      setTimeout(() => setObservabilityTestMessage(''), 3000);
     } catch (error) {
       setObservabilityTestStatus('error');
       setObservabilityTestMessage(error instanceof Error ? error.message : 'Failed to save configuration');
@@ -546,8 +767,12 @@ export const SettingsPage: React.FC = () => {
       await clearObservabilityConfig();
       setObservabilityConfigState({
         endpoint: '',
+        authType: 'basic',
         username: '',
         password: '',
+        awsProfile: '',
+        awsRegion: '',
+        awsService: 'es',
         tlsSkipVerify: false,
         tracesIndex: '',
         logsIndex: '',
@@ -564,6 +789,7 @@ export const SettingsPage: React.FC = () => {
   };
 
   return (
+    <>
     <div className="p-6 max-w-4xl mx-auto" data-testid="settings-page">
       <h2 className="text-2xl font-bold mb-6" data-testid="settings-title">Settings</h2>
 
@@ -610,11 +836,11 @@ export const SettingsPage: React.FC = () => {
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <Label htmlFor="debug-mode" className="text-sm font-medium">
-                Verbose Logging
+                Debug Mode
               </Label>
               <p className="text-xs text-muted-foreground">
-                Enable detailed console.debug() logs for SSE events, trajectory conversion, and evaluation flow
-                in both browser console and server terminal output.
+                Enable verbose logging (console.debug) AND real-time performance metrics overlay.
+                Useful for debugging evaluation flow, SSE events, and performance issues.
               </p>
             </div>
             <Switch
@@ -649,7 +875,7 @@ export const SettingsPage: React.FC = () => {
             <Label className="text-xs text-muted-foreground uppercase tracking-wide">Built-in Agents</Label>
 
             {DEFAULT_CONFIG.agents.filter(a => !a.isCustom).map((agent) => {
-              console.log('Rendering built-in agent:', agent.name, 'isCustom:', agent.isCustom);
+
               return (
                 <div
                   key={agent.key}
@@ -723,6 +949,30 @@ export const SettingsPage: React.FC = () => {
                   <p className="text-xs text-red-500">{endpointUrlError}</p>
                 )}
               </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Connector Type</Label>
+                <Select value={newConnectorType} onValueChange={(v) => setNewConnectorType(v as ConnectorProtocol)}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="agui-streaming">agui-streaming (default)</SelectItem>
+                    <SelectItem value="rest">rest</SelectItem>
+                    <SelectItem value="litellm">litellm</SelectItem>
+                    <SelectItem value="subprocess">subprocess</SelectItem>
+                    <SelectItem value="claude-code">claude-code</SelectItem>
+                    <SelectItem value="mock">mock</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="new-use-traces"
+                  checked={newUseTraces}
+                  onCheckedChange={setNewUseTraces}
+                />
+                <Label htmlFor="new-use-traces" className="text-xs">Enable Traces</Label>
+              </div>
               <div className="flex gap-2">
                 <Button size="sm" onClick={handleAddEndpoint} disabled={!newEndpointName.trim() || !newEndpointUrl.trim()}>
                   <Save size={14} className="mr-1" />
@@ -767,6 +1017,30 @@ export const SettingsPage: React.FC = () => {
                           <p className="text-xs text-red-500">{endpointUrlError}</p>
                         )}
                       </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Connector Type</Label>
+                        <Select value={newConnectorType} onValueChange={(v) => setNewConnectorType(v as ConnectorProtocol)}>
+                          <SelectTrigger className="h-8 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="agui-streaming">agui-streaming (default)</SelectItem>
+                            <SelectItem value="rest">rest</SelectItem>
+                            <SelectItem value="litellm">litellm</SelectItem>
+                            <SelectItem value="subprocess">subprocess</SelectItem>
+                            <SelectItem value="claude-code">claude-code</SelectItem>
+                            <SelectItem value="mock">mock</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          id={`edit-use-traces-${ep.id}`}
+                          checked={newUseTraces}
+                          onCheckedChange={setNewUseTraces}
+                        />
+                        <Label htmlFor={`edit-use-traces-${ep.id}`} className="text-xs">Enable Traces</Label>
+                      </div>
                       <div className="flex gap-2">
                         <Button size="sm" onClick={() => handleUpdateEndpoint(ep.id)}>
                           <Save size={14} className="mr-1" />
@@ -785,6 +1059,10 @@ export const SettingsPage: React.FC = () => {
                         <div className="text-xs text-muted-foreground truncate flex items-center gap-1 mt-1">
                           <ExternalLink size={10} />
                           {ep.endpoint}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
+                          <span>{ep.connectorType ?? 'agui-streaming'}</span>
+                          {ep.useTraces && <span className="px-1.5 py-0.5 rounded bg-green-100 text-green-900 border border-green-300 dark:bg-green-950/50 dark:text-green-300 dark:border-green-700/50">traces</span>}
                         </div>
                       </div>
                       <div className="flex items-center gap-1">
@@ -830,7 +1108,7 @@ export const SettingsPage: React.FC = () => {
       </Card>
 
       {/* Evaluation Storage Configuration */}
-      <Card className="mb-6">
+      <Card id="storage" className="mb-6">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Database size={18} />
@@ -842,7 +1120,7 @@ export const SettingsPage: React.FC = () => {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-xs text-muted-foreground">
-            Configure the OpenSearch cluster for storing evaluation data. Credentials are stored securely on the server (in agent-health.yaml), not in your browser.
+            Configure the OpenSearch cluster for storing evaluation data. Credentials are stored securely on the server (in agent-health.config.json), not in your browser.
           </p>
 
           <div className="space-y-3">
@@ -855,37 +1133,111 @@ export const SettingsPage: React.FC = () => {
                 onChange={(e) => setStorageConfigState({ ...storageConfig, endpoint: e.target.value })}
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="storage-username" className="text-xs">Username (optional)</Label>
-                <Input
-                  id="storage-username"
-                  placeholder="Leave blank to use env var"
-                  value={storageConfig.username}
-                  onChange={(e) => setStorageConfigState({ ...storageConfig, username: e.target.value })}
-                />
+
+            {/* Authentication Type */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Authentication Type</Label>
+              <Select
+                value={storageConfig.authType}
+                onValueChange={(v) => setStorageConfigState({ ...storageConfig, authType: v as ClusterAuthType })}
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No Auth</SelectItem>
+                  <SelectItem value="basic">Basic Auth (username/password)</SelectItem>
+                  <SelectItem value="sigv4">AWS SigV4</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {storageConfig.authType === 'none' ? (
+              /* No Auth - no credentials needed */
+              <div className="space-y-3 p-3 border rounded-lg bg-muted/10">
+                <p className="text-xs text-muted-foreground">
+                  No authentication — connects directly without credentials. Suitable for local development clusters.
+                </p>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="storage-password" className="text-xs">Password (optional)</Label>
-                <div className="relative">
+            ) : storageConfig.authType === 'basic' ? (
+              /* Basic Auth fields */
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="storage-username" className="text-xs">Username (optional)</Label>
                   <Input
-                    id="storage-password"
-                    type={showStoragePassword ? 'text' : 'password'}
+                    id="storage-username"
                     placeholder="Leave blank to use env var"
-                    value={storageConfig.password}
-                    onChange={(e) => setStorageConfigState({ ...storageConfig, password: e.target.value })}
-                    className="pr-10"
+                    value={storageConfig.username}
+                    onChange={(e) => setStorageConfigState({ ...storageConfig, username: e.target.value })}
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowStoragePassword(!showStoragePassword)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showStoragePassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="storage-password" className="text-xs">Password (optional)</Label>
+                  <div className="relative">
+                    <Input
+                      id="storage-password"
+                      type={showStoragePassword ? 'text' : 'password'}
+                      placeholder={storageConfig.password === PASSWORD_STORED_SENTINEL ? '••••••••' : 'Leave blank to use env var'}
+                      value={storageConfig.password === PASSWORD_STORED_SENTINEL ? '' : storageConfig.password}
+                      onChange={(e) => setStorageConfigState({ ...storageConfig, password: e.target.value })}
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowStoragePassword(!showStoragePassword)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showStoragePassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  {storageConfig.password === PASSWORD_STORED_SENTINEL && (
+                    <p className="text-xs text-muted-foreground">Password stored — leave blank to keep it, or type a new one to replace it</p>
+                  )}
                 </div>
               </div>
-            </div>
+            ) : (
+              /* AWS SigV4 fields */
+              <div className="space-y-3 p-3 border rounded-lg bg-muted/10">
+                <p className="text-xs text-muted-foreground">
+                  Uses the AWS credential chain (env vars, ~/.aws/credentials, IAM role, etc.)
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="storage-aws-region" className="text-xs">AWS Region (required)</Label>
+                    <Input
+                      id="storage-aws-region"
+                      placeholder="us-east-1"
+                      value={storageConfig.awsRegion}
+                      onChange={(e) => setStorageConfigState({ ...storageConfig, awsRegion: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="storage-aws-profile" className="text-xs">AWS Profile (optional)</Label>
+                    <Input
+                      id="storage-aws-profile"
+                      placeholder="default"
+                      value={storageConfig.awsProfile}
+                      onChange={(e) => setStorageConfigState({ ...storageConfig, awsProfile: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">AWS Service</Label>
+                  <Select
+                    value={storageConfig.awsService}
+                    onValueChange={(v) => setStorageConfigState({ ...storageConfig, awsService: v as 'es' | 'aoss' })}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="es">es (Managed OpenSearch)</SelectItem>
+                      <SelectItem value="aoss">aoss (Serverless)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
 
             {/* TLS Verification Toggle */}
             <div className="flex items-center justify-between">
@@ -912,7 +1264,7 @@ export const SettingsPage: React.FC = () => {
                   ? 'bg-blue-100 text-blue-900 border border-blue-300 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-700/50'
                   : 'bg-gray-100 text-gray-900 border border-gray-300 dark:bg-gray-800/50 dark:text-gray-400 dark:border-gray-700/50'
               }`}>
-                {configStatus.storage.source === 'file' ? 'Server file (agent-health.yaml)' :
+                {configStatus.storage.source === 'file' ? 'Config file (agent-health.config.json)' :
                  configStatus.storage.source === 'environment' ? 'Environment variables' :
                  'Not configured'}
               </span>
@@ -1052,7 +1404,7 @@ export const SettingsPage: React.FC = () => {
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-xs text-muted-foreground">
-            Configure the OpenSearch cluster for observability data. Credentials are stored securely on the server (in agent-health.yaml), not in your browser.
+            Configure the OpenSearch cluster for observability data. Credentials are stored securely on the server (in agent-health.config.json), not in your browser.
           </p>
 
           <div className="space-y-3">
@@ -1065,37 +1417,111 @@ export const SettingsPage: React.FC = () => {
                 onChange={(e) => setObservabilityConfigState({ ...observabilityConfig, endpoint: e.target.value })}
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label htmlFor="obs-username" className="text-xs">Username (optional)</Label>
-                <Input
-                  id="obs-username"
-                  placeholder="Leave blank to use env var"
-                  value={observabilityConfig.username}
-                  onChange={(e) => setObservabilityConfigState({ ...observabilityConfig, username: e.target.value })}
-                />
+
+            {/* Authentication Type */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Authentication Type</Label>
+              <Select
+                value={observabilityConfig.authType}
+                onValueChange={(v) => setObservabilityConfigState({ ...observabilityConfig, authType: v as ClusterAuthType })}
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No Auth</SelectItem>
+                  <SelectItem value="basic">Basic Auth (username/password)</SelectItem>
+                  <SelectItem value="sigv4">AWS SigV4</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {observabilityConfig.authType === 'none' ? (
+              /* No Auth - no credentials needed */
+              <div className="space-y-3 p-3 border rounded-lg bg-muted/10">
+                <p className="text-xs text-muted-foreground">
+                  No authentication — connects directly without credentials. Suitable for local development clusters.
+                </p>
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="obs-password" className="text-xs">Password (optional)</Label>
-                <div className="relative">
+            ) : observabilityConfig.authType === 'basic' ? (
+              /* Basic Auth fields */
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="obs-username" className="text-xs">Username (optional)</Label>
                   <Input
-                    id="obs-password"
-                    type={showObservabilityPassword ? 'text' : 'password'}
+                    id="obs-username"
                     placeholder="Leave blank to use env var"
-                    value={observabilityConfig.password}
-                    onChange={(e) => setObservabilityConfigState({ ...observabilityConfig, password: e.target.value })}
-                    className="pr-10"
+                    value={observabilityConfig.username}
+                    onChange={(e) => setObservabilityConfigState({ ...observabilityConfig, username: e.target.value })}
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowObservabilityPassword(!showObservabilityPassword)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    {showObservabilityPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="obs-password" className="text-xs">Password (optional)</Label>
+                  <div className="relative">
+                    <Input
+                      id="obs-password"
+                      type={showObservabilityPassword ? 'text' : 'password'}
+                      placeholder={observabilityConfig.password === PASSWORD_STORED_SENTINEL ? '••••••••' : 'Leave blank to use env var'}
+                      value={observabilityConfig.password === PASSWORD_STORED_SENTINEL ? '' : observabilityConfig.password}
+                      onChange={(e) => setObservabilityConfigState({ ...observabilityConfig, password: e.target.value })}
+                      className="pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowObservabilityPassword(!showObservabilityPassword)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showObservabilityPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  {observabilityConfig.password === PASSWORD_STORED_SENTINEL && (
+                    <p className="text-xs text-muted-foreground">Password stored — leave blank to keep it, or type a new one to replace it</p>
+                  )}
                 </div>
               </div>
-            </div>
+            ) : (
+              /* AWS SigV4 fields */
+              <div className="space-y-3 p-3 border rounded-lg bg-muted/10">
+                <p className="text-xs text-muted-foreground">
+                  Uses the AWS credential chain (env vars, ~/.aws/credentials, IAM role, etc.)
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="obs-aws-region" className="text-xs">AWS Region (required)</Label>
+                    <Input
+                      id="obs-aws-region"
+                      placeholder="us-east-1"
+                      value={observabilityConfig.awsRegion}
+                      onChange={(e) => setObservabilityConfigState({ ...observabilityConfig, awsRegion: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="obs-aws-profile" className="text-xs">AWS Profile (optional)</Label>
+                    <Input
+                      id="obs-aws-profile"
+                      placeholder="default"
+                      value={observabilityConfig.awsProfile}
+                      onChange={(e) => setObservabilityConfigState({ ...observabilityConfig, awsProfile: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">AWS Service</Label>
+                  <Select
+                    value={observabilityConfig.awsService}
+                    onValueChange={(v) => setObservabilityConfigState({ ...observabilityConfig, awsService: v as 'es' | 'aoss' })}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="es">es (Managed OpenSearch)</SelectItem>
+                      <SelectItem value="aoss">aoss (Serverless)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            )}
 
             {/* TLS Verification Toggle */}
             <div className="flex items-center justify-between">
@@ -1165,7 +1591,7 @@ export const SettingsPage: React.FC = () => {
                   ? 'bg-blue-100 text-blue-900 border border-blue-300 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-700/50'
                   : 'bg-gray-100 text-gray-900 border border-gray-300 dark:bg-gray-800/50 dark:text-gray-400 dark:border-gray-700/50'
               }`}>
-                {configStatus.observability.source === 'file' ? 'Server file (agent-health.yaml)' :
+                {configStatus.observability.source === 'file' ? 'Config file (agent-health.config.json)' :
                  configStatus.observability.source === 'environment' ? 'Environment variables' :
                  'Not configured'}
               </span>
@@ -1334,5 +1760,72 @@ export const SettingsPage: React.FC = () => {
         </Card>
       )}
     </div>
+
+    {/* Index Fix Progress Modal */}
+    <Dialog open={indexFixState.visible} onOpenChange={(open) => {
+      if (!open && indexFixState.done) {
+        setIndexFixState({ visible: false, progress: [], done: false });
+      }
+    }}>
+      <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => {
+        if (!indexFixState.done) e.preventDefault();
+      }}>
+        <DialogHeader>
+          <DialogTitle>
+            {indexFixState.done ? 'Index Mappings Fixed' : 'Fixing Index Mappings'}
+          </DialogTitle>
+          <DialogDescription>
+            {indexFixState.done
+              ? 'Incompatible index mappings have been automatically fixed.'
+              : 'Reindexing to fix incompatible field types. Please wait...'}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 mt-2">
+          {indexFixState.progress.map((item) => (
+            <div key={item.indexName} className="flex items-center gap-3 text-sm">
+              {item.status === 'pending' && (
+                <Circle size={16} className="text-muted-foreground" />
+              )}
+              {item.status === 'reindexing' && (
+                <Loader2 size={16} className="animate-spin text-blue-400" />
+              )}
+              {item.status === 'completed' && (
+                <CheckCircle2 size={16} className="text-green-400" />
+              )}
+              {item.status === 'failed' && (
+                <XCircle size={16} className="text-red-400" />
+              )}
+              <div className="flex-1">
+                <span className="font-mono text-xs">{item.indexName}</span>
+                {item.status === 'reindexing' && item.documentCount != null && (
+                  <span className="text-muted-foreground ml-2">
+                    ({item.documentCount} documents)
+                  </span>
+                )}
+                {item.status === 'completed' && item.documentCount != null && (
+                  <span className="text-muted-foreground ml-2">
+                    {item.documentCount} docs reindexed
+                  </span>
+                )}
+                {item.status === 'failed' && item.error && (
+                  <span className="text-red-400 ml-2">{item.error}</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        {indexFixState.done && (
+          <div className="mt-4 flex justify-end">
+            <Button
+              size="sm"
+              onClick={() => setIndexFixState({ visible: false, progress: [], done: false })}
+            >
+              Close
+            </Button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+    </>
   );
 };

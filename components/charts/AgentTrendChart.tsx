@@ -22,7 +22,7 @@ export type TrendMetric = 'passRate' | 'cost' | 'tokens' | 'latency';
 interface AgentTrendChartProps {
   data: TrendDataPoint[];
   metric: TrendMetric;
-  height?: number;
+  height?: number | string;
 }
 
 interface ChartDataPoint {
@@ -77,13 +77,16 @@ function transformDataForChart(
   const dates = [...new Set(data.map(d => d.date))].sort();
   const agents = [...new Set(data.map(d => d.agentKey))];
 
+  // Pre-index data for O(1) lookups instead of O(n) find() per date×agent
+  const dataIndex = new Map(data.map(d => [`${d.date}|${d.agentKey}`, d]));
+
   // Create chart data with one entry per date
   const chartData: ChartDataPoint[] = dates.map(date => {
     const point: ChartDataPoint = { date };
 
     // Add value for each agent on this date
     for (const agent of agents) {
-      const dataPoint = data.find(d => d.date === date && d.agentKey === agent);
+      const dataPoint = dataIndex.get(`${date}|${agent}`);
       point[agent] = dataPoint ? (dataPoint[dataKey] as number) : 0;
     }
 
@@ -104,9 +107,12 @@ function formatDateLabel(dateStr: string): string {
 export const AgentTrendChart: React.FC<AgentTrendChartProps> = ({
   data,
   metric,
-  height = 300,
+  height = "100%",
 }) => {
   const config = METRIC_CONFIG[metric];
+  
+  // Ensure height is in the correct format for ResponsiveContainer
+  const chartHeight = typeof height === 'number' ? height : height as `${number}%` | '100%';
 
   if (!data || data.length === 0) {
     return (
@@ -134,7 +140,7 @@ export const AgentTrendChart: React.FC<AgentTrendChartProps> = ({
   }
 
   return (
-    <ResponsiveContainer width="100%" height={height}>
+    <ResponsiveContainer width="100%" height={chartHeight}>
       <LineChart
         data={chartData}
         margin={{ top: 10, right: 30, left: 10, bottom: 10 }}

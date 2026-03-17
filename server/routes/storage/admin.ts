@@ -5,15 +5,21 @@
 
 /**
  * Admin Routes for Storage API
- * Handles health checks, index initialization, stats, and backfill operations
+ * Handles health checks, index initialization, stats, and backfill operations.
+ *
+ * Uses the storage adapter for health checks and analytics backfill.
+ * Index initialization is delegated to the indexInitializer service.
  */
 
 import { Router, Request, Response } from 'express';
 import { isStorageAvailable, requireStorageClient, INDEXES } from '../../middleware/storageClient.js';
 import { INDEX_MAPPINGS } from '../../constants/indexMappings';
-import { testStorageConnection } from '../../adapters/index.js';
+import { getStorageModule, testStorageConnection, isFileStorage, setStorageModule, OpenSearchStorageModule, FileStorageModule } from '../../adapters/index.js';
 import { resolveStorageConfig } from '../../middleware/dataSourceConfig.js';
+import { createOpenSearchClient } from '../../services/opensearchClientFactory.js';
 import { debug } from '@/lib/debug';
+import { ensureIndexes, ensureIndexesWithValidation } from '../../services/indexInitializer.js';
+import { reindexSingleIndex } from '../../services/mappingFixer.js';
 import {
   getConfigStatus,
   saveStorageConfig,
@@ -36,26 +42,30 @@ function asyncHandler(fn: (req: Request, res: Response) => Promise<any>) {
 
 router.get('/api/storage/health', async (req: Request, res: Response) => {
   try {
-    // Try to resolve config from headers or env vars
-    const config = resolveStorageConfig(req);
+    const storage = getStorageModule();
+    const health = await storage.health();
 
-    if (!config) {
-      return res.json({ status: 'not_configured', message: 'Storage not configured' });
-    }
-
-    // Use the test connection function for health check
-    const result = await testStorageConnection(config);
-    if (result.status === 'ok') {
-      res.json({
-        status: 'ok',
-        cluster: {
-          name: result.clusterName,
-          status: result.clusterStatus,
-        },
+    // If using file storage, also check if OpenSearch is configured
+    if (isFileStorage()) {
+      const config = resolveStorageConfig(req);
+      if (config) {
+        // OpenSearch is configured but file storage is active
+        // Check OpenSearch connectivity for the UI
+        const osResult = await testStorageConnection(config);
+        return res.json({
+          status: health.status,
+          backend: 'file',
+          opensearch: osResult,
+        });
+      }
+      return res.json({
+        status: health.status,
+        backend: 'file',
       });
-    } else {
-      res.json({ status: 'error', error: result.message });
     }
+
+    // OpenSearch storage module active
+    return res.json(health);
   } catch (error: any) {
     console.error('[StorageAPI] Health check failed:', error.message);
     res.json({ status: 'error', error: error.message });
@@ -74,7 +84,7 @@ router.get('/api/storage/health', async (req: Request, res: Response) => {
  */
 router.post('/api/storage/test-connection', async (req: Request, res: Response) => {
   try {
-    const { endpoint, username, password, tlsSkipVerify } = req.body;
+    const { endpoint, username, password, tlsSkipVerify, authType, awsProfile, awsRegion, awsService } = req.body;
 
     if (!endpoint) {
       return res.status(400).json({ status: 'error', message: 'Endpoint is required' });
@@ -82,8 +92,12 @@ router.post('/api/storage/test-connection', async (req: Request, res: Response) 
 
     const result = await testStorageConnection({
       endpoint,
+      authType: authType ?? process.env.OPENSEARCH_STORAGE_AUTH_TYPE,
       username: username ?? process.env.OPENSEARCH_STORAGE_USERNAME,
       password: password ?? process.env.OPENSEARCH_STORAGE_PASSWORD,
+      awsProfile: awsProfile ?? process.env.OPENSEARCH_STORAGE_AWS_PROFILE,
+      awsRegion: awsRegion ?? process.env.OPENSEARCH_STORAGE_AWS_REGION,
+      awsService: awsService ?? process.env.OPENSEARCH_STORAGE_AWS_SERVICE,
       tlsSkipVerify: tlsSkipVerify ?? (process.env.OPENSEARCH_STORAGE_TLS_SKIP_VERIFY === 'true'),
     });
     res.json(result);
@@ -94,38 +108,83 @@ router.post('/api/storage/test-connection', async (req: Request, res: Response) 
 });
 
 // ============================================================================
-// Initialize Indexes
+// Initialize Indexes (OpenSearch-specific)
 // ============================================================================
 
 router.post(
   '/api/storage/init-indexes',
   asyncHandler(async (req: Request, res: Response) => {
     if (!isStorageAvailable(req)) {
-      return res.status(400).json({ error: 'Storage not configured' });
+      return res.status(400).json({ error: 'OpenSearch storage not configured. File storage does not require index initialization.' });
     }
 
     const client = requireStorageClient(req);
-    const results: Record<string, any> = {};
-
-    for (const [indexName, mapping] of Object.entries(INDEX_MAPPINGS)) {
-      try {
-        // Check if index exists
-        const exists = await client.indices.exists({ index: indexName });
-        if (exists.body) {
-          results[indexName] = { status: 'exists' };
-          continue;
-        }
-
-        await client.indices.create({ index: indexName, body: mapping as any });
-        results[indexName] = { status: 'created' };
-        debug('StorageAPI', `Created index: ${indexName}`);
-      } catch (error: any) {
-        results[indexName] = { status: 'error', error: error.message };
-        console.error(`[StorageAPI] Failed to create index ${indexName}:`, error.message);
-      }
-    }
+    const results = await ensureIndexes(client);
 
     res.json({ success: true, results });
+  })
+);
+
+// ============================================================================
+// Reindex (migrate existing index to correct mappings)
+// ============================================================================
+
+/**
+ * POST /api/storage/reindex
+ * Reindex an existing index to apply correct mappings.
+ * Delegates to reindexSingleIndex() in mappingFixer service.
+ * Body: { index: string } — the index name to reindex (must be in INDEX_MAPPINGS)
+ */
+router.post(
+  '/api/storage/reindex',
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!isStorageAvailable(req)) {
+      return res.status(400).json({ error: 'OpenSearch storage not configured.' });
+    }
+
+    const { index: indexName } = req.body;
+    if (!indexName || typeof indexName !== 'string') {
+      return res.status(400).json({ error: 'index is required in request body' });
+    }
+
+    const mapping = INDEX_MAPPINGS[indexName];
+    if (!mapping) {
+      return res.status(400).json({ error: `Unknown index: ${indexName}. Must be one of: ${Object.keys(INDEX_MAPPINGS).join(', ')}` });
+    }
+
+    const client = requireStorageClient(req);
+    const tempIndex = `${indexName}_reindex_temp`;
+
+    try {
+      // Check source index exists
+      const exists = await client.indices.exists({ index: indexName });
+      if (!exists.body) {
+        return res.status(404).json({ error: `Index ${indexName} does not exist` });
+      }
+
+      const result = await reindexSingleIndex(client, indexName);
+
+      res.json({
+        success: true,
+        index: indexName,
+        documentsReindexed: result.documentsReindexed,
+      });
+    } catch (error: any) {
+      console.error(`[StorageAPI] Reindex failed for ${indexName}:`, error.message);
+
+      // Check if temp index still exists for manual cleanup
+      let tempStillExists = false;
+      try {
+        const check = await client.indices.exists({ index: tempIndex });
+        tempStillExists = check.body;
+      } catch { /* ignore */ }
+
+      res.status(500).json({
+        error: `Reindex failed: ${error.message}`,
+        tempIndex: tempStillExists ? tempIndex : undefined,
+        hint: tempStillExists ? `Temp index ${tempIndex} still exists with your data. Do NOT delete it manually until the original index is recovered.` : undefined,
+      });
+    }
   })
 );
 
@@ -136,8 +195,30 @@ router.post(
 router.get(
   '/api/storage/stats',
   asyncHandler(async (req: Request, res: Response) => {
+    const storage = getStorageModule();
+
+    if (isFileStorage()) {
+      // For file storage, count files in each directory
+      try {
+        const tcResult = await storage.testCases.getAll();
+        const benchResult = await storage.benchmarks.getAll();
+        const runResult = await storage.runs.getAll();
+
+        const stats: Record<string, any> = {
+          test_cases: { count: tcResult.total },
+          benchmarks: { count: benchResult.total },
+          runs: { count: runResult.total },
+          analytics: { count: 0 },
+        };
+
+        return res.json({ stats, backend: 'file' });
+      } catch (error: any) {
+        return res.json({ stats: {}, error: error.message, backend: 'file' });
+      }
+    }
+
+    // OpenSearch path
     if (!isStorageAvailable(req)) {
-      // Return empty stats when storage not configured
       const stats: Record<string, any> = {};
       for (const indexName of Object.values(INDEXES)) {
         stats[indexName] = { count: 0, error: 'Storage not configured' };
@@ -168,67 +249,11 @@ router.get(
 router.post(
   '/api/storage/backfill-analytics',
   asyncHandler(async (req: Request, res: Response) => {
-    if (!isStorageAvailable(req)) {
-      return res.status(400).json({ error: 'Storage not configured' });
-    }
+    const storage = getStorageModule();
+    const result = await storage.analytics.backfill();
 
-    const client = requireStorageClient(req);
-
-    // Fetch all runs
-    const result = await client.search({
-      index: INDEXES.runs,
-      body: {
-        size: 10000,
-        query: { match_all: {} },
-      },
-    });
-
-    const runs = result.body.hits?.hits?.map((hit: any) => hit._source) || [];
-    let backfilled = 0;
-    let errors = 0;
-
-    for (const run of runs) {
-      try {
-        const analyticsDoc: any = {
-          analyticsId: `analytics-${run.id}`,
-          runId: run.id,
-          experimentId: run.experimentId,
-          experimentRunId: run.experimentRunId,
-          testCaseId: run.testCaseId,
-          testCaseVersionId: run.testCaseVersionId,
-          traceId: run.traceId,
-          agentId: run.agentId,
-          modelId: run.modelId,
-          iteration: run.iteration || 1,
-          tags: run.tags || [],
-          passFailStatus: run.passFailStatus,
-          status: run.status,
-          createdAt: run.createdAt,
-          author: run.author,
-        };
-
-        // Flatten metrics with metric_ prefix
-        if (run.metrics) {
-          for (const [key, value] of Object.entries(run.metrics)) {
-            analyticsDoc[`metric_${key}`] = value;
-          }
-        }
-
-        await client.index({
-          index: INDEXES.analytics,
-          id: analyticsDoc.analyticsId,
-          body: analyticsDoc,
-          refresh: true,
-        });
-        backfilled++;
-      } catch (e: any) {
-        console.error(`Failed to backfill analytics for run ${run.id}:`, e.message);
-        errors++;
-      }
-    }
-
-    debug('StorageAPI', `Backfilled ${backfilled} analytics records (${errors} errors)`);
-    res.json({ backfilled, errors, total: runs.length });
+    debug('StorageAPI', `Backfilled ${result.backfilled} analytics records (${result.errors} errors)`);
+    res.json(result);
   })
 );
 
@@ -252,24 +277,108 @@ router.get('/api/storage/config/status', (req: Request, res: Response) => {
 
 /**
  * POST /api/storage/config/storage
- * Save storage configuration to file
+ * Save storage configuration to file and validate index mappings.
+ * Returns needsReindex: true if incompatible mappings are detected.
  * Body: { endpoint, username?, password?, tlsSkipVerify? }
  */
-router.post('/api/storage/config/storage', (req: Request, res: Response) => {
+router.post('/api/storage/config/storage', async (req: Request, res: Response) => {
   try {
-    const { endpoint, username, password, tlsSkipVerify } = req.body;
+    const { endpoint, username, password, tlsSkipVerify, authType, awsProfile, awsRegion, awsService } = req.body;
 
     if (!endpoint) {
       return res.status(400).json({ error: 'Endpoint is required' });
     }
 
-    saveStorageConfig({ endpoint, username, password, tlsSkipVerify });
-    res.json({ success: true, message: 'Storage configuration saved' });
+    saveStorageConfig({ endpoint, username, password, tlsSkipVerify, authType, awsProfile, awsRegion, awsService });
+
+    const client = createOpenSearchClient({
+      endpoint,
+      authType,
+      username,
+      password,
+      awsProfile,
+      awsRegion,
+      awsService,
+      tlsSkipVerify: tlsSkipVerify === true,
+    });
+
+    // Auto-create indexes, validate mappings, and auto-fix if needed
+    const setupResult = await ensureIndexesWithValidation(client);
+
+    setStorageModule(new OpenSearchStorageModule(client));
+
+    const hasFixFailures = setupResult.fixResults?.some((f) => f.status === 'failed') ?? false;
+    const hadIssues = setupResult.validationResults.some((r) => r.status === 'needs_reindex');
+    const needsReindex = hadIssues && (hasFixFailures || !setupResult.fixResults);
+    if (hasFixFailures) {
+      const failedNames = setupResult.fixResults!.filter((f) => f.status === 'failed').map((f) => f.indexName);
+      console.warn(`[StorageAPI] Index fix failures: ${failedNames.join(', ')}`);
+    }
+    res.json({
+      success: true,
+      message: 'Storage configuration saved',
+      connected: true,
+      indexResults: setupResult.indexResults,
+      validationResults: setupResult.validationResults,
+      fixResults: setupResult.fixResults,
+      needsReindex,
+    });
   } catch (error: any) {
     console.error('[StorageAPI] Failed to save storage config:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
+
+/**
+ * POST /api/storage/setup-indexes
+ * SSE endpoint for index setup with real-time progress.
+ * Validates and fixes index mappings, streaming per-index progress events.
+ */
+router.post(
+  '/api/storage/setup-indexes',
+  asyncHandler(async (req: Request, res: Response) => {
+    if (!isStorageAvailable(req)) {
+      return res.status(400).json({ error: 'OpenSearch storage not configured.' });
+    }
+
+    const client = requireStorageClient(req);
+
+    // Set SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const sendEvent = (data: any) => {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    try {
+      sendEvent({ type: 'started', indexes: Object.keys(INDEX_MAPPINGS) });
+
+      const setupResult = await ensureIndexesWithValidation(client, (progress) => {
+        sendEvent({ type: 'fix_progress', progress });
+      });
+
+      sendEvent({
+        type: 'validation',
+        results: setupResult.validationResults,
+      });
+
+      sendEvent({
+        type: 'completed',
+        indexResults: setupResult.indexResults,
+        validationResults: setupResult.validationResults,
+        fixResults: setupResult.fixResults,
+      });
+    } catch (error: any) {
+      console.error('[StorageAPI] Setup indexes failed:', error.message);
+      sendEvent({ type: 'error', error: error.message });
+    } finally {
+      res.end();
+    }
+  })
+);
 
 /**
  * POST /api/storage/config/observability
@@ -278,13 +387,13 @@ router.post('/api/storage/config/storage', (req: Request, res: Response) => {
  */
 router.post('/api/storage/config/observability', (req: Request, res: Response) => {
   try {
-    const { endpoint, username, password, tlsSkipVerify, indexes } = req.body;
+    const { endpoint, username, password, tlsSkipVerify, indexes, authType, awsProfile, awsRegion, awsService } = req.body;
 
     if (!endpoint) {
       return res.status(400).json({ error: 'Endpoint is required' });
     }
 
-    saveObservabilityConfig({ endpoint, username, password, tlsSkipVerify, indexes });
+    saveObservabilityConfig({ endpoint, username, password, tlsSkipVerify, indexes, authType, awsProfile, awsRegion, awsService });
     res.json({ success: true, message: 'Observability configuration saved' });
   } catch (error: any) {
     console.error('[StorageAPI] Failed to save observability config:', error.message);
@@ -299,6 +408,7 @@ router.post('/api/storage/config/observability', (req: Request, res: Response) =
 router.delete('/api/storage/config/storage', (req: Request, res: Response) => {
   try {
     clearStorageConfig();
+    setStorageModule(new FileStorageModule());
     res.json({ success: true, message: 'Storage configuration cleared' });
   } catch (error: any) {
     console.error('[StorageAPI] Failed to clear storage config:', error.message);
