@@ -30,6 +30,17 @@ interface TimeSeriesPoint {
   value: number;
 }
 
+export interface FilterAction {
+  type: 'status' | 'durationRange' | 'timeRange';
+  value: string;
+  /** For custom duration ranges */
+  durationMin?: string;
+  durationMax?: string;
+  /** For time-range clicks: start/end timestamps */
+  timeStart?: Date;
+  timeEnd?: Date;
+}
+
 interface MetricsOverviewProps {
   latencyDistribution: LatencyBucket[];
   errorTimeSeries: TimeSeriesPoint[];
@@ -38,6 +49,7 @@ interface MetricsOverviewProps {
   totalSpans: number;
   totalErrors: number;
   avgLatency: number;
+  onFilter?: (action: FilterAction) => void;
 }
 
 export const MetricsOverview: React.FC<MetricsOverviewProps> = ({
@@ -48,6 +60,7 @@ export const MetricsOverview: React.FC<MetricsOverviewProps> = ({
   totalSpans,
   totalErrors,
   avgLatency,
+  onFilter,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -81,7 +94,7 @@ export const MetricsOverview: React.FC<MetricsOverviewProps> = ({
   };
 
   return (
-    <Card className="mb-4">
+    <Card>
       <CardHeader 
         className="py-3 px-4 cursor-pointer hover:bg-muted/50 transition-colors"
         onClick={() => setIsExpanded(!isExpanded)}
@@ -114,7 +127,18 @@ export const MetricsOverview: React.FC<MetricsOverviewProps> = ({
             <span className="text-muted-foreground/50">·</span>
             {/* Errors with sparkline (mirrors Error Count chart) */}
             <div className="flex items-center gap-1.5">
-              <span className={cn("font-semibold", totalErrors > 0 ? "text-red-500" : "")}>{totalRequests > 0 ? ((totalErrors / totalRequests) * 100).toFixed(1) : 0}%</span>
+              <span className={cn("font-semibold", totalErrors > 0 ? "text-red-500" : "")}>
+                {totalErrors > 0 ? (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onFilter?.({ type: 'status', value: 'error' }); }}
+                    className="cursor-pointer hover:underline"
+                  >
+                    {totalRequests > 0 ? ((totalErrors / totalRequests) * 100).toFixed(1) : 0}%
+                  </button>
+                ) : (
+                  <>{totalRequests > 0 ? ((totalErrors / totalRequests) * 100).toFixed(1) : 0}%</>
+                )}
+              </span>
               <span className="text-muted-foreground">errors</span>
               {!isExpanded && errorTimeSeries.length > 0 && totalErrors > 0 && (
                 <svg width="44" height="16" className="ml-0.5" aria-hidden="true">
@@ -159,7 +183,7 @@ export const MetricsOverview: React.FC<MetricsOverviewProps> = ({
       </CardHeader>
 
       {isExpanded && (
-        <CardContent className="p-4 pt-0">
+        <CardContent className="p-4 pt-2">
           <div className="grid grid-cols-3 gap-6 divide-x divide-dashed divide-border">
             {/* Trace Count - Outlined Bars (mirrors traces/spans sparkline) */}
             <div className="space-y-2 pr-6">
@@ -178,9 +202,12 @@ export const MetricsOverview: React.FC<MetricsOverviewProps> = ({
                       }}
                     />
                     {point.value > 0 && (
-                      <div className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-medium opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap bg-background px-1 rounded">
+                      <button
+                        onClick={() => onFilter?.({ type: 'timeRange', value: 'bucket', timeStart: point.timestamp, timeEnd: requestTimeSeries[idx + 1]?.timestamp })}
+                        className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-medium opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap bg-background px-1 rounded cursor-pointer hover:text-foreground hover:underline"
+                      >
                         {point.value}
-                      </div>
+                      </button>
                     )}
                   </div>
                 ))}
@@ -195,7 +222,12 @@ export const MetricsOverview: React.FC<MetricsOverviewProps> = ({
             <div className="space-y-2 px-6">
               <div className="flex items-center justify-between text-xs">
                 <span className="font-medium text-muted-foreground">Error Count</span>
-                <span className="text-[10px] font-semibold text-red-500">{formatCompact(totalErrors)} total</span>
+                <button
+                  onClick={() => onFilter?.({ type: 'status', value: 'error' })}
+                  className="text-[10px] font-semibold text-red-500 cursor-pointer hover:underline"
+                >
+                  {formatCompact(totalErrors)} total
+                </button>
               </div>
               <div className="h-24 relative">
                 <svg className="w-full h-full" preserveAspectRatio="none">
@@ -233,19 +265,33 @@ export const MetricsOverview: React.FC<MetricsOverviewProps> = ({
                     const x = (idx / (errorTimeSeries.length - 1)) * 100;
                     const y = 100 - (point.value / maxErrors) * 100;
                     return (
-                      <g key={idx}>
-                        <circle
-                          cx={`${x}%`}
-                          cy={`${y}%`}
-                          r="3"
-                          fill="rgb(239, 68, 68)"
-                          className="opacity-0 hover:opacity-100 transition-opacity"
-                        />
-                        <title>{point.value}</title>
-                      </g>
+                      <circle
+                        key={idx}
+                        cx={`${x}%`}
+                        cy={`${y}%`}
+                        r="3"
+                        fill="rgb(239, 68, 68)"
+                        className="opacity-0"
+                      />
                     );
                   })}
                 </svg>
+                {/* Overlay hit-targets for clickable hover labels */}
+                <div className="absolute inset-0 flex">
+                  {errorTimeSeries.map((point, idx) => (
+                    <div key={idx} className="flex-1 relative group">
+                      {point.value > 0 && (
+                        <button
+                          onClick={() => onFilter?.({ type: 'timeRange', value: 'error-bucket', timeStart: point.timestamp, timeEnd: errorTimeSeries[idx + 1]?.timestamp })}
+                          className="absolute left-1/2 -translate-x-1/2 text-[10px] font-medium text-red-500 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap bg-background px-1 rounded cursor-pointer hover:underline"
+                          style={{ top: `max(0px, calc(${(1 - point.value / maxErrors) * 100}% - 18px))` }}
+                        >
+                          {point.value}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
               <div className="flex justify-between text-[9px] text-muted-foreground">
                 <span>Earlier</span>
@@ -274,12 +320,20 @@ export const MetricsOverview: React.FC<MetricsOverviewProps> = ({
                         }}
                       />
                       {bucket.count > 0 && (
-                        <div className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-medium opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                        <button
+                          onClick={() => onFilter?.({
+                            type: 'durationRange',
+                            value: bucket.max === Infinity ? `>${bucket.min}` : `${bucket.min}-${bucket.max}`,
+                            durationMin: String(bucket.min),
+                            durationMax: bucket.max === Infinity ? '' : String(bucket.max),
+                          })}
+                          className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-medium opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap cursor-pointer hover:underline bg-background px-1 rounded"
+                        >
                           {bucket.count}
-                        </div>
+                        </button>
                       )}
                     </div>
-                    <span className="text-[9px] text-muted-foreground text-center leading-tight">
+                    <span className="text-[9px] text-muted-foreground text-center leading-tight truncate w-full" title={bucket.label}>
                       {bucket.label}
                     </span>
                   </div>
