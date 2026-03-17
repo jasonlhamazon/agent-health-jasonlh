@@ -126,9 +126,9 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         }}
         data-testid="sidebar"
       >
-        <SidebarHeader className="p-3 border-b">
+        <SidebarHeader className="px-3 pt-2 pb-3 border-b">
           {/* Collapse/Expand button - own row at top */}
-          <div className="flex justify-end mb-2">
+          <div className="flex justify-end mb-1.5">
             {!isCollapsed ? (
               <button
                 onClick={() => setIsCollapsed(true)}
@@ -157,17 +157,17 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
             <div className="flex items-center gap-2.5 mb-3">
               <img src={OpenSearchLogo} alt="OpenSearch" className="w-7 h-7 flex-shrink-0" />
               <div className="min-w-0">
-                <h1 className="text-xs font-semibold leading-tight">
+                <h1 className="text-sm font-semibold leading-tight">
                   OpenSearch AgentHealth
                 </h1>
-                <p className="text-[11px] text-muted-foreground leading-tight">
+                <p className="text-[11px] text-muted-foreground leading-tight mt-1">
                   Agentic Observability
                 </p>
               </div>
             </div>
           )}
           {isCollapsed && (
-            <div className="flex items-center justify-center mb-2">
+            <div className="flex items-center justify-center mb-1">
               <img src={OpenSearchLogo} alt="OpenSearch" className="w-7 h-7" />
             </div>
           )}
@@ -180,13 +180,13 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 placeholder="Search the menu"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-7 h-8 text-xs md:text-xs"
+                className="pl-7 h-7 text-xs md:text-xs"
               />
             </div>
           )}
         </SidebarHeader>
 
-        <SidebarContent className="px-3 py-2">
+        <SidebarContent className="px-1.5 py-2">
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu className="space-y-1">
@@ -214,21 +214,32 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                     onOpenChange={setEvalsOpen}
                   >
                     <SidebarMenuItem>
-                      <CollapsibleTrigger asChild>
-                        <SidebarMenuButton
-                          tooltip="Evals"
-                          isActive={isEvalsPath}
-                          className="h-9 w-full"
-                        >
-                          <TestTube className="h-3.5 w-3.5" />
-                          <span className="text-xs">Evals</span>
-                          <ChevronDown 
-                            className={`ml-auto h-3.5 w-3.5 transition-transform duration-200 ${
-                              evalsOpen ? 'rotate-180' : ''
-                            }`} 
-                          />
-                        </SidebarMenuButton>
-                      </CollapsibleTrigger>
+                      <SidebarMenuButton
+                        asChild
+                        tooltip="Evals"
+                        isActive={isEvalsPath}
+                        className="h-9 w-full"
+                      >
+                        <div className="flex items-center w-full">
+                          <Link to="/test-cases" className="flex items-center gap-2 flex-1 min-w-0">
+                            <TestTube className="h-3.5 w-3.5" />
+                            <span className="text-xs">Evals</span>
+                          </Link>
+                          <CollapsibleTrigger asChild>
+                            <button
+                              onClick={(e) => e.stopPropagation()}
+                              className="p-0.5 rounded hover:bg-muted-foreground/20 transition-colors ml-auto"
+                              aria-label="Toggle evals submenu"
+                            >
+                              <ChevronDown 
+                                className={`h-3.5 w-3.5 transition-transform duration-200 ${
+                                  evalsOpen ? 'rotate-180' : ''
+                                }`} 
+                              />
+                            </button>
+                          </CollapsibleTrigger>
+                        </div>
+                      </SidebarMenuButton>
                       <CollapsibleContent>
                         <SidebarMenuSub className="ml-4 mt-1 space-y-1">
                           {evalsSubItems.map((item) => (
