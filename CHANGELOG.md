@@ -10,6 +10,11 @@ Inspired by [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 ## [Unreleased]
 
 ### Added
+- Category distribution mini-bar visualization in Agent Traces table rows ([#108](https://github.com/opensearch-project/agent-health/pull/108))
+- Filter popover with chip-based filtering for Agent Traces ([#108](https://github.com/opensearch-project/agent-health/pull/108))
+- Compact number formatting (`formatCompact`) for metrics display ([#108](https://github.com/opensearch-project/agent-health/pull/108))
+- Minimap toggle and resizable panel layout for trace flyout ([#108](https://github.com/opensearch-project/agent-health/pull/108))
+- Light mode color support with improved contrast across all components ([#108](https://github.com/opensearch-project/agent-health/pull/108))
 - AWS SigV4 authentication support for OpenSearch clusters with `ClusterAuthType` (`none` | `basic` | `sigv4`) ([#85](https://github.com/opensearch-project/agent-health/pull/85))
 - OpenSearch client factory (`opensearchClientFactory.ts`) for centralized client creation with basic, none, or SigV4 auth ([#85](https://github.com/opensearch-project/agent-health/pull/85))
 - Mapping validation service to detect incompatible field types in OpenSearch indexes ([#85](https://github.com/opensearch-project/agent-health/pull/85))
@@ -28,6 +33,10 @@ Inspired by [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Add `afterResponse` and `buildTrajectory` hook for PER agent support ([#70](https://github.com/opensearch-project/agent-health/pull/70))
 
 ### Changed
+- Reduce global sidebar width and refactor header layout for better space utilization ([#108](https://github.com/opensearch-project/agent-health/pull/108))
+- Improve metrics overview with sparkline charts and reordered layout ([#108](https://github.com/opensearch-project/agent-health/pull/108))
+- Remove drop shadows from non-floating UI components (Card, Button, Badge, Input, etc.) for cleaner visual style ([#108](https://github.com/opensearch-project/agent-health/pull/108))
+- Align metrics chart columns at the bottom with consistent heights ([#108](https://github.com/opensearch-project/agent-health/pull/108))
 - Optimize Dashboard data loading: parallelize benchmark/report fetches, defer metrics to non-blocking phase, request only needed fields ([#86](https://github.com/opensearch-project/agent-health/pull/86))
 - Improve AgentTrendChart performance with O(1) Map lookups instead of O(n) `find()` per data point ([#86](https://github.com/opensearch-project/agent-health/pull/86))
 - Skip dashboard data loading when First Run Experience will be shown ([#86](https://github.com/opensearch-project/agent-health/pull/86))
@@ -41,6 +50,10 @@ Inspired by [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 - Refactor storage admin routes to use mapping fixer and validator services ([#85](https://github.com/opensearch-project/agent-health/pull/85))
 
 ### Fixed
+- Fullscreen trace flyout click-outside detection closing flyout unexpectedly ([#108](https://github.com/opensearch-project/agent-health/pull/108))
+- Benchmark traces tab layout and default view mode ([#108](https://github.com/opensearch-project/agent-health/pull/108))
+- Sidebar spacing and Evals menu interaction behavior ([#108](https://github.com/opensearch-project/agent-health/pull/108))
+- TypeScript compilation errors from merge conflict resolution ([#108](https://github.com/opensearch-project/agent-health/pull/108))
 - Navigation links in FirstRunExperience using non-existent routes (`/settings/clusters`) — now use correct paths (`/agent-traces`, `/benchmarks`, `/settings#storage`) ([#86](https://github.com/opensearch-project/agent-health/pull/86))
 - FirstRunExperience workflow items (Trace, Evaluate, Improve) are now clickable links with hover states ([#86](https://github.com/opensearch-project/agent-health/pull/86))
 - URL hash scrolling on Settings page for deep-linking to sections (e.g., `/settings#storage`) ([#86](https://github.com/opensearch-project/agent-health/pull/86))
