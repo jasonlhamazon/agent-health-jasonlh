@@ -18,14 +18,11 @@ import {
   Search,
   RefreshCw,
   Activity,
-  Clock,
-  AlertCircle,
   CheckCircle2,
   XCircle,
   ChevronRight,
-  BarChart3,
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -366,13 +363,15 @@ export const AgentTracesPage: React.FC = () => {
 
   // Calculate stats
   const stats = useMemo(() => {
-    if (allTraces.length === 0) return { total: 0, errors: 0, avgDuration: 0 };
+    if (allTraces.length === 0) return { total: 0, totalSpans: 0, errors: 0, avgDuration: 0 };
 
     const errors = allTraces.filter(t => t.hasErrors).length;
     const avgDuration = allTraces.reduce((sum, t) => sum + t.duration, 0) / allTraces.length;
+    const totalSpans = allTraces.reduce((sum, t) => sum + t.spanCount, 0);
 
     return {
       total: allTraces.length,
+      totalSpans,
       errors,
       avgDuration,
     };
@@ -395,37 +394,6 @@ export const AgentTracesPage: React.FC = () => {
           {/* Right: Stats and Filters with Last Updated below */}
           <div className="flex flex-col items-end gap-1 flex-shrink-0">
             <div className="flex items-center gap-3">
-              {/* Inline Stats */}
-              <div className="flex items-center gap-2 text-sm">
-                <div className="flex items-center gap-1">
-                  <Activity size={13} className="text-opensearch-blue" />
-                  <span className="font-semibold text-opensearch-blue">{allTraces.length}</span>
-                  <span className="text-muted-foreground">traces</span>
-                </div>
-                <span className="text-muted-foreground">•</span>
-                <div className="flex items-center gap-1">
-                  <BarChart3 size={13} className="text-purple-700 dark:text-purple-400" />
-                  <span className="font-semibold text-purple-700 dark:text-purple-400">{spans.length}</span>
-                  <span className="text-muted-foreground">spans</span>
-                </div>
-                <span className="text-muted-foreground">•</span>
-                <div className="flex items-center gap-1">
-                  <AlertCircle size={13} className="text-red-700 dark:text-red-400" />
-                  <span className="font-semibold text-red-700 dark:text-red-400">
-                    {stats.total > 0 ? ((stats.errors / stats.total) * 100).toFixed(1) : 0}%
-                  </span>
-                  <span className="text-muted-foreground">({stats.errors}) errors</span>
-                </div>
-                <span className="text-muted-foreground">•</span>
-                <div className="flex items-center gap-1">
-                  <Clock size={13} className="text-amber-700 dark:text-amber-400" />
-                  <span className="font-semibold text-amber-700 dark:text-amber-400">
-                    {formatDuration(stats.avgDuration)}
-                  </span>
-                  <span className="text-muted-foreground">avg latency</span>
-                </div>
-              </div>
-
               {/* Search Bar */}
               <div className="w-[220px]">
                 <div className="relative">
@@ -497,6 +465,7 @@ export const AgentTracesPage: React.FC = () => {
             errorTimeSeries={errorTimeSeries}
             requestTimeSeries={requestTimeSeries}
             totalRequests={stats.total}
+            totalSpans={stats.totalSpans}
             totalErrors={stats.errors}
             avgLatency={stats.avgDuration}
           />
