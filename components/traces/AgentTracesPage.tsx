@@ -37,7 +37,7 @@ import {
   fetchRecentTraces,
   groupSpansByTrace,
 } from '@/services/traces';
-import { formatDuration } from '@/services/traces/utils';
+import { formatDuration, formatCompact } from '@/services/traces/utils';
 import { TraceFlyoutContent } from './TraceFlyoutContent';
 import MetricsOverview from './MetricsOverview';
 import { useSidebarCollapse } from '../Layout';
@@ -101,7 +101,7 @@ const TraceRow: React.FC<TraceRowProps> = ({ trace, onSelect, isSelected }) => {
       </td>
       <td className="p-4 align-middle text-center">
         <Badge variant="secondary" className="text-xs">
-          {trace.spanCount}
+          {formatCompact(trace.spanCount)}
         </Badge>
       </td>
       <td className="p-4 align-middle">
@@ -895,15 +895,15 @@ export const AgentTracesPage: React.FC = () => {
                 <div className="text-sm font-medium flex items-center gap-2 whitespace-nowrap">
                   <Activity size={14} />
                   Traces
-                  <Badge variant="secondary" className="ml-2">{filteredTraces.length}</Badge>
+                  <Badge variant="secondary" className="ml-2">{formatCompact(filteredTraces.length)}</Badge>
                   {filteredTraces.length < allTraces.length && (
                     <span className="text-xs text-muted-foreground ml-2">
-                      (filtered from {allTraces.length})
+                      (filtered from {formatCompact(allTraces.length)})
                     </span>
                   )}
                   {displayedTraces.length < filteredTraces.length && (
                     <span className="text-xs text-muted-foreground ml-2">
-                      (showing {displayedTraces.length})
+                      (showing {formatCompact(displayedTraces.length)})
                     </span>
                   )}
                 </div>
