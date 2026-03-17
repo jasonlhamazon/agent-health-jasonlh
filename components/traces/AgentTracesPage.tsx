@@ -194,7 +194,7 @@ const TraceRow: React.FC<TraceRowProps> = ({ trace, onSelect, isSelected }) => {
                     <div
                       key={stat.category}
                       className={cn('h-full', colors.bar)}
-                      style={{ width: `${widthPercent}%` }}
+                      style={{ width: `${widthPercent}%`, opacity: 0.45 }}
                     />
                   );
                 })}
