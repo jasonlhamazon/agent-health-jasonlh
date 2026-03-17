@@ -21,6 +21,8 @@ import {
   CheckCircle2,
   XCircle,
   ChevronRight,
+  SlidersHorizontal,
+  X,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -28,6 +30,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Span } from '@/types';
 import { DEFAULT_CONFIG } from '@/lib/constants';
 import {
@@ -119,6 +122,31 @@ export const AgentTracesPage: React.FC = () => {
   const [textSearch, setTextSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [timeRange, setTimeRange] = useState<string>('1440'); // Default to 1 day
+
+  // Advanced filter state
+  const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
+  const [rootSpanSuggestOpen, setRootSpanSuggestOpen] = useState(false);
+  const [filters, setFilters] = useState<{
+    status: string;
+    rootSpan: string;
+    traceId: string;
+    durationRange: string;
+    durationMin: string;
+    durationMax: string;
+    spanCountRange: string;
+    spanCountMin: string;
+    spanCountMax: string;
+  }>({
+    status: 'all',
+    rootSpan: '',
+    traceId: '',
+    durationRange: 'all',
+    durationMin: '',
+    durationMax: '',
+    spanCountRange: 'all',
+    spanCountMin: '',
+    spanCountMax: '',
+  });
 
   // Loading state
   const [isLoading, setIsLoading] = useState(false);
@@ -220,7 +248,7 @@ export const AgentTracesPage: React.FC = () => {
       setSpans(result.spans);
       const processedTraces = processSpansToTraces(result.spans);
       setAllTraces(processedTraces);
-      setDisplayedTraces(processedTraces.slice(0, 100)); // Initially show first 100
+      setDisplayedTraces(processedTraces.slice(0, 100));
       setDisplayCount(100);
       setLastRefresh(new Date());
     } catch (err) {
@@ -248,35 +276,6 @@ export const AgentTracesPage: React.FC = () => {
     scrollContainer.addEventListener('scroll', handleScroll);
     return () => scrollContainer.removeEventListener('scroll', handleScroll);
   }, []);
-
-  // Lazy loading with intersection observer
-  useEffect(() => {
-    const currentRef = loadMoreRef.current;
-    if (!currentRef || displayCount >= allTraces.length) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const target = entries[0];
-        if (target.isIntersecting && displayCount < allTraces.length) {
-          // Load next 100 traces
-          const nextCount = Math.min(displayCount + 100, allTraces.length);
-          setDisplayedTraces(allTraces.slice(0, nextCount));
-          setDisplayCount(nextCount);
-        }
-      },
-      {
-        root: null,
-        rootMargin: '200px', // Start loading 200px before reaching the bottom
-        threshold: 0.1,
-      }
-    );
-
-    observer.observe(currentRef);
-
-    return () => {
-      observer.unobserve(currentRef);
-    };
-  }, [displayCount, allTraces]);
 
   // Handle trace selection
   const handleSelectTrace = (trace: TraceTableRow) => {
@@ -377,6 +376,182 @@ export const AgentTracesPage: React.FC = () => {
     };
   }, [allTraces]);
 
+  // Unique root span names for autosuggest (derived from in-memory data, zero cost)
+  const uniqueRootSpans = useMemo(() => {
+    const names = new Set(allTraces.map(t => t.rootSpanName));
+    return Array.from(names).sort();
+  }, [allTraces]);
+
+  // Filtered suggestions based on current input
+  const rootSpanSuggestions = useMemo(() => {
+    if (!filters.rootSpan) return uniqueRootSpans.slice(0, 10);
+    const q = filters.rootSpan.toLowerCase();
+    return uniqueRootSpans.filter(n => n.toLowerCase().includes(q)).slice(0, 10);
+  }, [uniqueRootSpans, filters.rootSpan]);
+
+  // Client-side filtering
+  const filteredTraces = useMemo(() => {
+    let result = allTraces;
+
+    // Status filter
+    if (filters.status === 'success') result = result.filter(t => !t.hasErrors);
+    if (filters.status === 'error') result = result.filter(t => t.hasErrors);
+
+    // Root span filter
+    if (filters.rootSpan) {
+      const q = filters.rootSpan.toLowerCase();
+      result = result.filter(t => t.rootSpanName.toLowerCase().includes(q));
+    }
+
+    // Trace ID filter
+    if (filters.traceId) {
+      const q = filters.traceId.toLowerCase();
+      result = result.filter(t => t.traceId.toLowerCase().includes(q));
+    }
+
+    // Duration filter (values in ms)
+    if (filters.durationRange !== 'all') {
+      if (filters.durationRange === 'custom') {
+        const min = filters.durationMin ? parseFloat(filters.durationMin) : 0;
+        const max = filters.durationMax ? parseFloat(filters.durationMax) : Infinity;
+        result = result.filter(t => t.duration >= min && t.duration <= max);
+      } else if (filters.durationRange === '>10000') {
+        result = result.filter(t => t.duration > 10000);
+      } else {
+        const [min, max] = filters.durationRange.split('-').map(Number);
+        result = result.filter(t => t.duration >= min && t.duration < max);
+      }
+    }
+
+    // Span count filter
+    if (filters.spanCountRange !== 'all') {
+      if (filters.spanCountRange === 'custom') {
+        const min = filters.spanCountMin ? parseInt(filters.spanCountMin) : 0;
+        const max = filters.spanCountMax ? parseInt(filters.spanCountMax) : Infinity;
+        result = result.filter(t => t.spanCount >= min && t.spanCount <= max);
+      } else if (filters.spanCountRange === '>1000') {
+        result = result.filter(t => t.spanCount > 1000);
+      } else {
+        const [min, max] = filters.spanCountRange.split('-').map(Number);
+        result = result.filter(t => t.spanCount >= min && t.spanCount <= max);
+      }
+    }
+
+    // Text search as filter
+    if (debouncedSearch) {
+      const q = debouncedSearch.toLowerCase();
+      result = result.filter(t =>
+        t.traceId.toLowerCase().includes(q) ||
+        t.rootSpanName.toLowerCase().includes(q) ||
+        t.serviceName.toLowerCase().includes(q)
+      );
+    }
+
+    return result;
+  }, [allTraces, filters, debouncedSearch]);
+
+  // Active filter chips
+  const activeFilterChips = useMemo(() => {
+    const chips: { key: string; label: string }[] = [];
+    if (filters.status !== 'all') chips.push({ key: 'status', label: `Status: ${filters.status}` });
+    if (filters.rootSpan) chips.push({ key: 'rootSpan', label: `Root span: ${filters.rootSpan}` });
+    if (filters.traceId) chips.push({ key: 'traceId', label: `Trace ID: ${filters.traceId}` });
+    if (filters.durationRange !== 'all') {
+      const durationLabels: Record<string, string> = {
+        '0-10': '0–10ms', '10-50': '10–50ms', '50-100': '50–100ms',
+        '100-1000': '100ms–1s', '1000-5000': '1–5s', '5000-10000': '5–10s',
+        '>10000': '>10s',
+      };
+      const label = filters.durationRange === 'custom'
+        ? `Duration: ${filters.durationMin || '0'}–${filters.durationMax || '∞'}ms`
+        : `Duration: ${durationLabels[filters.durationRange] || filters.durationRange}`;
+      chips.push({ key: 'durationRange', label });
+    }
+    if (filters.spanCountRange !== 'all') {
+      const label = filters.spanCountRange === 'custom'
+        ? `Spans: ${filters.spanCountMin || '0'}–${filters.spanCountMax || '∞'}`
+        : `Spans: ${filters.spanCountRange}`;
+      chips.push({ key: 'spanCountRange', label });
+    }
+    if (textSearch) chips.push({ key: 'textSearch', label: `Keyword: ${textSearch}` });
+    return chips;
+  }, [filters, textSearch]);
+
+  // Remove a single filter chip
+  const removeFilterChip = (key: string) => {
+    if (key === 'textSearch') {
+      setTextSearch('');
+      return;
+    }
+    setFilters(prev => {
+      const next = { ...prev };
+      if (key === 'status') next.status = 'all';
+      if (key === 'rootSpan') next.rootSpan = '';
+      if (key === 'traceId') next.traceId = '';
+      if (key === 'durationRange') {
+        next.durationRange = 'all';
+        next.durationMin = '';
+        next.durationMax = '';
+      }
+      if (key === 'spanCountRange') {
+        next.spanCountRange = 'all';
+        next.spanCountMin = '';
+        next.spanCountMax = '';
+      }
+      return next;
+    });
+  };
+
+  // Clear all filters
+  const clearAllFilters = () => {
+    setTextSearch('');
+    setFilters({
+      status: 'all',
+      rootSpan: '',
+      traceId: '',
+      durationRange: 'all',
+      durationMin: '',
+      durationMax: '',
+      spanCountRange: 'all',
+      spanCountMin: '',
+      spanCountMax: '',
+    });
+  };
+
+  // Lazy loading with intersection observer
+  useEffect(() => {
+    const currentRef = loadMoreRef.current;
+    if (!currentRef || displayCount >= filteredTraces.length) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const target = entries[0];
+        if (target.isIntersecting && displayCount < filteredTraces.length) {
+          const nextCount = Math.min(displayCount + 100, filteredTraces.length);
+          setDisplayedTraces(filteredTraces.slice(0, nextCount));
+          setDisplayCount(nextCount);
+        }
+      },
+      {
+        root: null,
+        rootMargin: '200px',
+        threshold: 0.1,
+      }
+    );
+
+    observer.observe(currentRef);
+
+    return () => {
+      observer.unobserve(currentRef);
+    };
+  }, [displayCount, filteredTraces]);
+
+  // Reset displayed traces when filteredTraces changes
+  useEffect(() => {
+    setDisplayedTraces(filteredTraces.slice(0, 100));
+    setDisplayCount(100);
+  }, [filteredTraces]);
+
   return (
     <div className="h-full flex flex-col">
       {/* Compact Header with Inline Stats and Filters */}
@@ -406,6 +581,191 @@ export const AgentTracesPage: React.FC = () => {
                   />
                 </div>
               </div>
+
+              {/* Filter Button */}
+              <Popover open={filterPopoverOpen} onOpenChange={setFilterPopoverOpen}>
+                <PopoverTrigger>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 text-sm font-normal"
+                  >
+                    <SlidersHorizontal size={14} />
+                    Filter
+                    {activeFilterChips.length > 0 && (
+                      <Badge variant="secondary" className="ml-0.5 h-4 px-1 text-[10px] rounded-full">
+                        {activeFilterChips.length}
+                      </Badge>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-[320px] p-0">
+                  <div className="p-3 border-b">
+                    <div className="text-sm font-medium">Filters</div>
+                  </div>
+                  <div className="p-3 space-y-3 max-h-[400px] overflow-y-auto">
+                    {/* Status */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Status</label>
+                      <Select value={filters.status} onValueChange={(v) => setFilters(prev => ({ ...prev, status: v }))}>
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All</SelectItem>
+                          <SelectItem value="success">Success</SelectItem>
+                          <SelectItem value="error">Error</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Root Span */}
+                    <div className="space-y-1 relative">
+                      <label className="text-xs font-medium text-muted-foreground">Root Span</label>
+                      <Input
+                        placeholder="Filter by root span name"
+                        value={filters.rootSpan}
+                        onChange={(e) => {
+                          setFilters(prev => ({ ...prev, rootSpan: e.target.value }));
+                          setRootSpanSuggestOpen(true);
+                        }}
+                        onFocus={() => setRootSpanSuggestOpen(true)}
+                        onBlur={() => setTimeout(() => setRootSpanSuggestOpen(false), 150)}
+                        className="h-8 text-sm"
+                      />
+                      {rootSpanSuggestOpen && rootSpanSuggestions.length > 0 && (
+                        <div className="absolute z-50 top-full mt-1 left-0 right-0 max-h-[160px] overflow-y-auto rounded-md border bg-popover shadow-md">
+                          {rootSpanSuggestions.map(name => (
+                            <button
+                              key={name}
+                              className="w-full text-left px-3 py-1.5 text-sm hover:bg-muted/50 truncate"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                setFilters(prev => ({ ...prev, rootSpan: name }));
+                                setRootSpanSuggestOpen(false);
+                              }}
+                            >
+                              {name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Trace ID */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Trace ID</label>
+                      <Input
+                        placeholder="Filter by trace ID"
+                        value={filters.traceId}
+                        onChange={(e) => setFilters(prev => ({ ...prev, traceId: e.target.value }))}
+                        className="h-8 text-sm"
+                      />
+                    </div>
+
+                    {/* Duration */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Duration</label>
+                      <Select
+                        value={filters.durationRange}
+                        onValueChange={(v) => setFilters(prev => ({
+                          ...prev,
+                          durationRange: v,
+                          ...(v !== 'custom' ? { durationMin: '', durationMax: '' } : {}),
+                        }))}
+                      >
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All</SelectItem>
+                          <SelectItem value="0-10">0 – 10ms</SelectItem>
+                          <SelectItem value="10-50">10 – 50ms</SelectItem>
+                          <SelectItem value="50-100">50 – 100ms</SelectItem>
+                          <SelectItem value="100-1000">100ms – 1s</SelectItem>
+                          <SelectItem value="1000-5000">1 – 5s</SelectItem>
+                          <SelectItem value="5000-10000">5 – 10s</SelectItem>
+                          <SelectItem value=">10000">&gt; 10s</SelectItem>
+                          <SelectItem value="custom">Custom range</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {filters.durationRange === 'custom' && (
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <Input
+                            placeholder="Min (ms)"
+                            type="number"
+                            value={filters.durationMin}
+                            onChange={(e) => setFilters(prev => ({ ...prev, durationMin: e.target.value }))}
+                            className="h-8 text-sm"
+                          />
+                          <span className="text-xs text-muted-foreground">to</span>
+                          <Input
+                            placeholder="Max (ms)"
+                            type="number"
+                            value={filters.durationMax}
+                            onChange={(e) => setFilters(prev => ({ ...prev, durationMax: e.target.value }))}
+                            className="h-8 text-sm"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Span Count */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-muted-foreground">Number of Spans</label>
+                      <Select
+                        value={filters.spanCountRange}
+                        onValueChange={(v) => setFilters(prev => ({
+                          ...prev,
+                          spanCountRange: v,
+                          ...(v !== 'custom' ? { spanCountMin: '', spanCountMax: '' } : {}),
+                        }))}
+                      >
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All</SelectItem>
+                          <SelectItem value="0-10">0 – 10</SelectItem>
+                          <SelectItem value="10-50">10 – 50</SelectItem>
+                          <SelectItem value="50-100">50 – 100</SelectItem>
+                          <SelectItem value="100-1000">100 – 1000</SelectItem>
+                          <SelectItem value=">1000">&gt; 1000</SelectItem>
+                          <SelectItem value="custom">Custom range</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {filters.spanCountRange === 'custom' && (
+                        <div className="flex items-center gap-2 mt-1.5">
+                          <Input
+                            placeholder="Min"
+                            type="number"
+                            value={filters.spanCountMin}
+                            onChange={(e) => setFilters(prev => ({ ...prev, spanCountMin: e.target.value }))}
+                            className="h-8 text-sm"
+                          />
+                          <span className="text-xs text-muted-foreground">to</span>
+                          <Input
+                            placeholder="Max"
+                            type="number"
+                            value={filters.spanCountMax}
+                            onChange={(e) => setFilters(prev => ({ ...prev, spanCountMax: e.target.value }))}
+                            className="h-8 text-sm"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {/* Footer */}
+                  <div className="p-3 border-t flex justify-between">
+                    <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={clearAllFilters}>
+                      Clear all
+                    </Button>
+                    <Button size="sm" className="h-7 text-xs" onClick={() => setFilterPopoverOpen(false)}>
+                      Done
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
 
               {/* Agent Filter */}
               <Select value={selectedAgent} onValueChange={setSelectedAgent}>
@@ -457,6 +817,34 @@ export const AgentTracesPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Filter Chips */}
+      {activeFilterChips.length > 0 && (
+        <div className="px-6 pt-3 flex items-center gap-2 flex-wrap justify-end">
+          {activeFilterChips.map(chip => (
+            <Badge
+              key={chip.key}
+              variant="secondary"
+              className="gap-1 pr-1 text-xs font-normal"
+            >
+              {chip.label}
+              <button
+                onClick={() => removeFilterChip(chip.key)}
+                className="ml-0.5 rounded-full p-0.5 hover:bg-muted-foreground/20 transition-colors"
+                aria-label={`Remove ${chip.label} filter`}
+              >
+                <X size={12} />
+              </button>
+            </Badge>
+          ))}
+          <button
+            onClick={clearAllFilters}
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Clear all
+          </button>
+        </div>
+      )}
+
       {/* Metrics Overview - Trends */}
       <div className="px-6 pt-4">
         {allTraces.length > 0 && (
@@ -507,8 +895,13 @@ export const AgentTracesPage: React.FC = () => {
                 <div className="text-sm font-medium flex items-center gap-2 whitespace-nowrap">
                   <Activity size={14} />
                   Traces
-                  <Badge variant="secondary" className="ml-2">{allTraces.length}</Badge>
-                  {displayedTraces.length < allTraces.length && (
+                  <Badge variant="secondary" className="ml-2">{filteredTraces.length}</Badge>
+                  {filteredTraces.length < allTraces.length && (
+                    <span className="text-xs text-muted-foreground ml-2">
+                      (filtered from {allTraces.length})
+                    </span>
+                  )}
+                  {displayedTraces.length < filteredTraces.length && (
                     <span className="text-xs text-muted-foreground ml-2">
                       (showing {displayedTraces.length})
                     </span>
@@ -554,7 +947,7 @@ export const AgentTracesPage: React.FC = () => {
                       />
                     ))}
                     {/* Intersection observer target for lazy loading */}
-                    {displayedTraces.length < allTraces.length && (
+                    {displayedTraces.length < filteredTraces.length && (
                       <tr ref={loadMoreRef} className="hover:bg-transparent border-b transition-colors">
                         <td colSpan={7} className="p-4 align-middle text-center py-8">
                           <div className="flex items-center justify-center gap-2 text-muted-foreground">
