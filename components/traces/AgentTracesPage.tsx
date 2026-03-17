@@ -18,11 +18,13 @@ import {
   Search,
   RefreshCw,
   Activity,
+  Check,
   CheckCircle2,
   XCircle,
   ChevronRight,
   SlidersHorizontal,
   X,
+  Copy,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -39,7 +41,7 @@ import {
 } from '@/services/traces';
 import { formatDuration, formatCompact } from '@/services/traces/utils';
 import { TraceFlyoutContent } from './TraceFlyoutContent';
-import MetricsOverview from './MetricsOverview';
+import MetricsOverview, { FilterAction } from './MetricsOverview';
 import { useSidebarCollapse } from '../Layout';
 
 // ==================== Types ====================
@@ -64,48 +66,110 @@ interface TraceRowProps {
 }
 
 const TraceRow: React.FC<TraceRowProps> = ({ trace, onSelect, isSelected }) => {
+  const [copiedField, setCopiedField] = React.useState<string | null>(null);
+
+  const handleCopy = (e: React.MouseEvent, text: string, field: string) => {
+    e.stopPropagation();
+    // Fallback for non-HTTPS (localhost dev)
+    const doCopy = () => {
+      if (navigator.clipboard?.writeText) {
+        return navigator.clipboard.writeText(text);
+      }
+      // Fallback: textarea + execCommand
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      return Promise.resolve();
+    };
+    doCopy()
+      .then(() => {
+        setCopiedField(field);
+        setTimeout(() => setCopiedField(null), 1500);
+      })
+      .catch((err) => console.error('Copy failed:', err));
+  };
+
   return (
     <tr
-      className={`border-b transition-colors cursor-pointer hover:bg-muted/50 ${isSelected ? 'bg-muted/70' : ''}`}
+      className={`border-b transition-colors cursor-pointer hover:bg-muted/50 group ${isSelected ? 'bg-muted/70' : ''}`}
       onClick={onSelect}
     >
-      <td className="p-4 align-middle text-xs text-muted-foreground w-[180px]">
+      <td className="py-1.5 px-3 align-middle text-xs text-muted-foreground whitespace-nowrap">
         {trace.startTime.toLocaleString()}
       </td>
-      <td className="p-4 align-middle font-mono text-xs">
-        <div className="flex items-center gap-2">
+      <td className="py-1.5 px-3 align-middle font-mono text-xs">
+        <div className="flex items-center gap-1.5">
           {trace.hasErrors ? (
-            <XCircle size={14} className="text-red-700 dark:text-red-400" />
+            <XCircle size={12} className="text-red-700 dark:text-red-400 flex-shrink-0" />
           ) : (
-            <CheckCircle2 size={14} className="text-green-700 dark:text-green-400" />
+            <CheckCircle2 size={12} className="text-green-700 dark:text-green-400 flex-shrink-0" />
           )}
           <span title={trace.traceId}>
-            {trace.traceId}
+            {trace.traceId.slice(0, 8)}…
           </span>
+          <button
+            onClick={(e) => handleCopy(e, trace.traceId, 'traceId')}
+            className="relative opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-muted-foreground/20 flex-shrink-0"
+            aria-label="Copy trace ID"
+          >
+            {copiedField === 'traceId' ? (
+              <>
+                <Check size={12} className="text-green-500" />
+                <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] bg-foreground text-background px-1.5 py-0.5 rounded whitespace-nowrap">
+                  Copied
+                </span>
+              </>
+            ) : (
+              <Copy size={12} className="text-muted-foreground" />
+            )}
+          </button>
         </div>
       </td>
-      <td className="p-4 align-middle">
-        <span title={trace.rootSpanName}>
-          {trace.rootSpanName}
-        </span>
+      <td className="py-1.5 px-3 align-middle text-xs">
+        <div className="flex items-center gap-1.5 max-w-[200px]">
+          <span className="truncate" title={trace.rootSpanName}>
+            {trace.rootSpanName}
+          </span>
+          <button
+            onClick={(e) => handleCopy(e, trace.rootSpanName, 'rootSpan')}
+            className="relative opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-muted-foreground/20 flex-shrink-0"
+            aria-label="Copy root span name"
+          >
+            {copiedField === 'rootSpan' ? (
+              <>
+                <Check size={12} className="text-green-500" />
+                <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] bg-foreground text-background px-1.5 py-0.5 rounded whitespace-nowrap">
+                  Copied
+                </span>
+              </>
+            ) : (
+              <Copy size={12} className="text-muted-foreground" />
+            )}
+          </button>
+        </div>
       </td>
-      <td className="p-4 align-middle">
-        <Badge variant="outline" className="text-xs">
+      <td className="py-1.5 px-3 align-middle">
+        <Badge variant="outline" className="text-[11px] py-0 px-1.5">
           {trace.serviceName || 'unknown'}
         </Badge>
       </td>
-      <td className="p-4 align-middle">
+      <td className="py-1.5 px-3 align-middle">
         <span className={`font-mono text-xs ${trace.duration > 5000 ? 'text-amber-700 dark:text-amber-400' : 'text-muted-foreground'}`}>
           {formatDuration(trace.duration)}
         </span>
       </td>
-      <td className="p-4 align-middle text-center">
-        <Badge variant="secondary" className="text-xs">
+      <td className="py-1.5 px-3 align-middle text-center">
+        <Badge variant="secondary" className="text-[11px] py-0 px-1.5">
           {formatCompact(trace.spanCount)}
         </Badge>
       </td>
-      <td className="p-4 align-middle">
-        <ChevronRight size={16} className="text-muted-foreground" />
+      <td className="py-1.5 px-3 align-middle">
+        <ChevronRight size={14} className="text-muted-foreground" />
       </td>
     </tr>
   );
@@ -126,8 +190,10 @@ export const AgentTracesPage: React.FC = () => {
   // Advanced filter state
   const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
   const [rootSpanSuggestOpen, setRootSpanSuggestOpen] = useState(false);
+  const [serviceSuggestOpen, setServiceSuggestOpen] = useState(false);
   const [filters, setFilters] = useState<{
     status: string;
+    service: string;
     rootSpan: string;
     traceId: string;
     durationRange: string;
@@ -136,8 +202,11 @@ export const AgentTracesPage: React.FC = () => {
     spanCountRange: string;
     spanCountMin: string;
     spanCountMax: string;
+    timeWindowStart: string;
+    timeWindowEnd: string;
   }>({
     status: 'all',
+    service: '',
     rootSpan: '',
     traceId: '',
     durationRange: 'all',
@@ -146,6 +215,8 @@ export const AgentTracesPage: React.FC = () => {
     spanCountRange: 'all',
     spanCountMin: '',
     spanCountMax: '',
+    timeWindowStart: '',
+    timeWindowEnd: '',
   });
 
   // Loading state
@@ -389,6 +460,19 @@ export const AgentTracesPage: React.FC = () => {
     return uniqueRootSpans.filter(n => n.toLowerCase().includes(q)).slice(0, 10);
   }, [uniqueRootSpans, filters.rootSpan]);
 
+  // Unique service names for autosuggest
+  const uniqueServiceNames = useMemo(() => {
+    const names = new Set(allTraces.map(t => t.serviceName));
+    return Array.from(names).sort();
+  }, [allTraces]);
+
+  // Filtered service suggestions based on current input
+  const serviceSuggestions = useMemo(() => {
+    if (!filters.service) return uniqueServiceNames.slice(0, 10);
+    const q = filters.service.toLowerCase();
+    return uniqueServiceNames.filter(n => n.toLowerCase().includes(q)).slice(0, 10);
+  }, [uniqueServiceNames, filters.service]);
+
   // Client-side filtering
   const filteredTraces = useMemo(() => {
     let result = allTraces;
@@ -401,6 +485,12 @@ export const AgentTracesPage: React.FC = () => {
     if (filters.rootSpan) {
       const q = filters.rootSpan.toLowerCase();
       result = result.filter(t => t.rootSpanName.toLowerCase().includes(q));
+    }
+
+    // Service filter
+    if (filters.service) {
+      const q = filters.service.toLowerCase();
+      result = result.filter(t => t.serviceName.toLowerCase().includes(q));
     }
 
     // Trace ID filter
@@ -437,6 +527,16 @@ export const AgentTracesPage: React.FC = () => {
       }
     }
 
+    // Time window filter (from chart clicks)
+    if (filters.timeWindowStart && filters.timeWindowEnd) {
+      const start = new Date(filters.timeWindowStart).getTime();
+      const end = new Date(filters.timeWindowEnd).getTime();
+      result = result.filter(t => {
+        const ts = t.startTime.getTime();
+        return ts >= start && ts < end;
+      });
+    }
+
     // Text search as filter
     if (debouncedSearch) {
       const q = debouncedSearch.toLowerCase();
@@ -454,6 +554,7 @@ export const AgentTracesPage: React.FC = () => {
   const activeFilterChips = useMemo(() => {
     const chips: { key: string; label: string }[] = [];
     if (filters.status !== 'all') chips.push({ key: 'status', label: `Status: ${filters.status}` });
+    if (filters.service) chips.push({ key: 'service', label: `Service: ${filters.service}` });
     if (filters.rootSpan) chips.push({ key: 'rootSpan', label: `Root span: ${filters.rootSpan}` });
     if (filters.traceId) chips.push({ key: 'traceId', label: `Trace ID: ${filters.traceId}` });
     if (filters.durationRange !== 'all') {
@@ -474,6 +575,12 @@ export const AgentTracesPage: React.FC = () => {
       chips.push({ key: 'spanCountRange', label });
     }
     if (textSearch) chips.push({ key: 'textSearch', label: `Keyword: ${textSearch}` });
+    if (filters.timeWindowStart) {
+      const s = new Date(filters.timeWindowStart);
+      const e = filters.timeWindowEnd ? new Date(filters.timeWindowEnd) : null;
+      const fmt = (d: Date) => d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+      chips.push({ key: 'timeWindow', label: `Time: ${fmt(s)}–${e ? fmt(e) : 'now'}` });
+    }
     return chips;
   }, [filters, textSearch]);
 
@@ -486,6 +593,7 @@ export const AgentTracesPage: React.FC = () => {
     setFilters(prev => {
       const next = { ...prev };
       if (key === 'status') next.status = 'all';
+      if (key === 'service') next.service = '';
       if (key === 'rootSpan') next.rootSpan = '';
       if (key === 'traceId') next.traceId = '';
       if (key === 'durationRange') {
@@ -498,6 +606,10 @@ export const AgentTracesPage: React.FC = () => {
         next.spanCountMin = '';
         next.spanCountMax = '';
       }
+      if (key === 'timeWindow') {
+        next.timeWindowStart = '';
+        next.timeWindowEnd = '';
+      }
       return next;
     });
   };
@@ -507,6 +619,7 @@ export const AgentTracesPage: React.FC = () => {
     setTextSearch('');
     setFilters({
       status: 'all',
+      service: '',
       rootSpan: '',
       traceId: '',
       durationRange: 'all',
@@ -515,8 +628,38 @@ export const AgentTracesPage: React.FC = () => {
       spanCountRange: 'all',
       spanCountMin: '',
       spanCountMax: '',
+      timeWindowStart: '',
+      timeWindowEnd: '',
     });
   };
+
+  // Handle filter actions from MetricsOverview chart clicks
+  const handleMetricsFilter = useCallback((action: FilterAction) => {
+    if (action.type === 'status') {
+      setFilters(prev => ({ ...prev, status: action.value }));
+    } else if (action.type === 'durationRange') {
+      setFilters(prev => ({
+        ...prev,
+        durationRange: 'custom',
+        durationMin: action.durationMin || '',
+        durationMax: action.durationMax || '',
+      }));
+    } else if (action.type === 'timeRange') {
+      // For time-bucket clicks, compute the bucket window
+      const start = action.timeStart;
+      const end = action.timeEnd;
+      if (start) {
+        // For error-bucket clicks, also set status=error
+        const isError = action.value === 'error-bucket';
+        setFilters(prev => ({
+          ...prev,
+          timeWindowStart: start.toISOString(),
+          timeWindowEnd: end ? end.toISOString() : new Date().toISOString(),
+          ...(isError ? { status: 'error' } : {}),
+        }));
+      }
+    }
+  }, []);
 
   // Lazy loading with intersection observer
   useEffect(() => {
@@ -555,13 +698,13 @@ export const AgentTracesPage: React.FC = () => {
   return (
     <div className="h-full flex flex-col">
       {/* Compact Header with Inline Stats and Filters */}
-      <div className="px-6 pt-6 pb-4 border-b">
+      <div className="px-6 pt-4 pb-3 border-b">
         {/* Single Row: Title + Stats + Filters */}
         <div className="flex items-start justify-between gap-4">
           {/* Left: Title and Description */}
           <div className="flex-shrink-0">
-            <h2 className="text-2xl font-bold">Agent Traces</h2>
-            <p className="text-xs text-muted-foreground mt-1">
+            <h2 className="text-xl font-bold">Agent Traces</h2>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
               Analyze agent execution traces from OTEL
             </p>
           </div>
@@ -570,14 +713,14 @@ export const AgentTracesPage: React.FC = () => {
           <div className="flex flex-col items-end gap-1 flex-shrink-0">
             <div className="flex items-center gap-3">
               {/* Search Bar */}
-              <div className="w-[220px]">
+              <div className="w-[200px]">
                 <div className="relative">
-                  <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     placeholder="Search"
                     value={textSearch}
                     onChange={(e) => setTextSearch(e.target.value)}
-                    className="pl-8 h-8 text-sm"
+                    className="pl-7 h-7 text-xs md:text-xs"
                   />
                 </div>
               </div>
@@ -588,9 +731,9 @@ export const AgentTracesPage: React.FC = () => {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-8 gap-1.5 text-sm font-normal"
+                    className="h-7 gap-1.5 text-xs font-normal"
                   >
-                    <SlidersHorizontal size={14} />
+                    <SlidersHorizontal size={12} />
                     Filter
                     {activeFilterChips.length > 0 && (
                       <Badge variant="secondary" className="ml-0.5 h-4 px-1 text-[10px] rounded-full">
@@ -617,6 +760,39 @@ export const AgentTracesPage: React.FC = () => {
                           <SelectItem value="error">Error</SelectItem>
                         </SelectContent>
                       </Select>
+                    </div>
+
+                    {/* Service */}
+                    <div className="space-y-1 relative">
+                      <label className="text-xs font-medium text-muted-foreground">Service</label>
+                      <Input
+                        placeholder="Filter by service name"
+                        value={filters.service}
+                        onChange={(e) => {
+                          setFilters(prev => ({ ...prev, service: e.target.value }));
+                          setServiceSuggestOpen(true);
+                        }}
+                        onFocus={() => setServiceSuggestOpen(true)}
+                        onBlur={() => setTimeout(() => setServiceSuggestOpen(false), 150)}
+                        className="h-8 text-sm"
+                      />
+                      {serviceSuggestOpen && serviceSuggestions.length > 0 && (
+                        <div className="absolute z-50 top-full mt-1 left-0 right-0 max-h-[160px] overflow-y-auto rounded-md border bg-popover shadow-md">
+                          {serviceSuggestions.map(name => (
+                            <button
+                              key={name}
+                              className="w-full text-left px-3 py-1.5 text-sm hover:bg-muted/50 truncate"
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                                setFilters(prev => ({ ...prev, service: name }));
+                                setServiceSuggestOpen(false);
+                              }}
+                            >
+                              {name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     {/* Root Span */}
@@ -769,7 +945,7 @@ export const AgentTracesPage: React.FC = () => {
 
               {/* Agent Filter */}
               <Select value={selectedAgent} onValueChange={setSelectedAgent}>
-                <SelectTrigger className="w-[110px] h-8 text-sm">
+                <SelectTrigger className="w-[100px] h-7 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -783,7 +959,7 @@ export const AgentTracesPage: React.FC = () => {
 
               {/* Time Range */}
               <Select value={timeRange} onValueChange={setTimeRange}>
-                <SelectTrigger className="w-[90px] h-8 text-sm">
+                <SelectTrigger className="w-[85px] h-7 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -801,15 +977,15 @@ export const AgentTracesPage: React.FC = () => {
                 size="sm"
                 onClick={fetchTraces}
                 disabled={isLoading}
-                className="h-8"
+                className="h-7"
               >
-                <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+                <RefreshCw size={12} className={isLoading ? 'animate-spin' : ''} />
               </Button>
             </div>
             
             {/* Last Updated - Below stats and filters */}
             {lastRefresh && (
-              <span className="text-xs text-muted-foreground">
+              <span className="text-[11px] text-muted-foreground">
                 Last updated: {lastRefresh.toLocaleTimeString()}
               </span>
             )}
@@ -819,7 +995,7 @@ export const AgentTracesPage: React.FC = () => {
 
       {/* Filter Chips */}
       {activeFilterChips.length > 0 && (
-        <div className="px-6 pt-3 flex items-center gap-2 flex-wrap justify-end">
+        <div className="px-6 pt-2 flex items-center gap-2 flex-wrap justify-end">
           {activeFilterChips.map(chip => (
             <Badge
               key={chip.key}
@@ -846,7 +1022,7 @@ export const AgentTracesPage: React.FC = () => {
       )}
 
       {/* Metrics Overview - Trends */}
-      <div className="px-6 pt-4">
+      <div className="px-6 pt-2">
         {allTraces.length > 0 && (
           <MetricsOverview
             latencyDistribution={latencyDistribution}
@@ -856,13 +1032,14 @@ export const AgentTracesPage: React.FC = () => {
             totalSpans={stats.totalSpans}
             totalErrors={stats.errors}
             avgLatency={stats.avgDuration}
+            onFilter={handleMetricsFilter}
           />
         )}
       </div>
 
       {/* Error State */}
       {error && (
-        <div className="px-6 pt-4">
+        <div className="px-6 pt-2">
           <Card className="bg-red-50 dark:bg-red-500/10 border-red-300 dark:border-red-500/30">
             <CardContent className="p-4 text-sm text-red-700 dark:text-red-400">
               {error}
@@ -872,7 +1049,7 @@ export const AgentTracesPage: React.FC = () => {
       )}
 
       {/* Traces Table */}
-      <Card className="flex-1 flex flex-col overflow-hidden mx-6 mt-4 mb-6">
+      <Card className="flex-1 flex flex-col overflow-hidden mx-6 mt-2 mb-6">
         <div ref={scrollContainerRef} className="relative flex-1 overflow-auto">
           {allTraces.length === 0 && !isLoading ? (
             <div className="h-full flex flex-col items-center justify-center text-muted-foreground py-12">
@@ -916,25 +1093,25 @@ export const AgentTracesPage: React.FC = () => {
                     isScrolled ? 'shadow-sm' : ''
                   }`}>
                     <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
-                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground w-[180px] bg-background border-b">
+                      <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground whitespace-nowrap bg-background border-b">
                         Start Time
                       </th>
-                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground bg-background border-b">
+                      <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b">
                         Trace ID
                       </th>
-                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground bg-background border-b">
+                      <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b">
                         Root Span
                       </th>
-                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground bg-background border-b">
+                      <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b">
                         Service
                       </th>
-                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground bg-background border-b">
+                      <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b">
                         Duration
                       </th>
-                      <th className="h-12 px-4 text-center align-middle font-medium text-muted-foreground bg-background border-b">
+                      <th className="h-8 px-3 text-center align-middle font-medium text-xs text-muted-foreground bg-background border-b">
                         Spans
                       </th>
-                      <th className="h-12 px-4 text-left align-middle font-medium text-muted-foreground bg-background border-b"></th>
+                      <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b"></th>
                     </tr>
                   </thead>
                   <tbody className="[&_tr:last-child]:border-0">
@@ -949,7 +1126,7 @@ export const AgentTracesPage: React.FC = () => {
                     {/* Intersection observer target for lazy loading */}
                     {displayedTraces.length < filteredTraces.length && (
                       <tr ref={loadMoreRef} className="hover:bg-transparent border-b transition-colors">
-                        <td colSpan={7} className="p-4 align-middle text-center py-8">
+                        <td colSpan={7} className="py-1.5 px-3 align-middle text-center py-4">
                           <div className="flex items-center justify-center gap-2 text-muted-foreground">
                             <RefreshCw size={16} className="animate-spin" />
                             <span className="text-sm">Loading more traces...</span>
