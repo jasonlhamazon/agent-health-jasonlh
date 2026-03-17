@@ -588,6 +588,83 @@ export const AgentTracesPage: React.FC = () => {
     return () => scrollContainer.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Client-side filtering
+  const filteredTraces = useMemo(() => {
+    let result = allTraces;
+
+    // Status filter
+    if (filters.status === 'success') result = result.filter(t => !t.hasErrors);
+    if (filters.status === 'error') result = result.filter(t => t.hasErrors);
+
+    // Root span filter
+    if (filters.rootSpan) {
+      const q = filters.rootSpan.toLowerCase();
+      result = result.filter(t => t.rootSpanName.toLowerCase().includes(q));
+    }
+
+    // Service filter
+    if (filters.service) {
+      const q = filters.service.toLowerCase();
+      result = result.filter(t => t.serviceName.toLowerCase().includes(q));
+    }
+
+    // Trace ID filter
+    if (filters.traceId) {
+      const q = filters.traceId.toLowerCase();
+      result = result.filter(t => t.traceId.toLowerCase().includes(q));
+    }
+
+    // Duration filter (values in ms)
+    if (filters.durationRange !== 'all') {
+      if (filters.durationRange === 'custom') {
+        const min = filters.durationMin ? parseFloat(filters.durationMin) : 0;
+        const max = filters.durationMax ? parseFloat(filters.durationMax) : Infinity;
+        result = result.filter(t => t.duration >= min && t.duration <= max);
+      } else if (filters.durationRange === '>10000') {
+        result = result.filter(t => t.duration > 10000);
+      } else {
+        const [min, max] = filters.durationRange.split('-').map(Number);
+        result = result.filter(t => t.duration >= min && t.duration < max);
+      }
+    }
+
+    // Span count filter
+    if (filters.spanCountRange !== 'all') {
+      if (filters.spanCountRange === 'custom') {
+        const min = filters.spanCountMin ? parseInt(filters.spanCountMin) : 0;
+        const max = filters.spanCountMax ? parseInt(filters.spanCountMax) : Infinity;
+        result = result.filter(t => t.spanCount >= min && t.spanCount <= max);
+      } else if (filters.spanCountRange === '>1000') {
+        result = result.filter(t => t.spanCount > 1000);
+      } else {
+        const [min, max] = filters.spanCountRange.split('-').map(Number);
+        result = result.filter(t => t.spanCount >= min && t.spanCount <= max);
+      }
+    }
+
+    // Time window filter (from chart clicks)
+    if (filters.timeWindowStart && filters.timeWindowEnd) {
+      const start = new Date(filters.timeWindowStart).getTime();
+      const end = new Date(filters.timeWindowEnd).getTime();
+      result = result.filter(t => {
+        const ts = t.startTime.getTime();
+        return ts >= start && ts < end;
+      });
+    }
+
+    // Text search as filter
+    if (debouncedSearch) {
+      const q = debouncedSearch.toLowerCase();
+      result = result.filter(t =>
+        t.traceId.toLowerCase().includes(q) ||
+        t.rootSpanName.toLowerCase().includes(q) ||
+        t.serviceName.toLowerCase().includes(q)
+      );
+    }
+
+    return result;
+  }, [allTraces, filters, debouncedSearch]);
+
   // Lazy loading with intersection observer (client-side + server-side pagination)
   useEffect(() => {
     const currentRef = loadMoreRef.current;
@@ -759,83 +836,6 @@ export const AgentTracesPage: React.FC = () => {
     const q = filters.service.toLowerCase();
     return uniqueServiceNames.filter(n => n.toLowerCase().includes(q)).slice(0, 10);
   }, [uniqueServiceNames, filters.service]);
-
-  // Client-side filtering
-  const filteredTraces = useMemo(() => {
-    let result = allTraces;
-
-    // Status filter
-    if (filters.status === 'success') result = result.filter(t => !t.hasErrors);
-    if (filters.status === 'error') result = result.filter(t => t.hasErrors);
-
-    // Root span filter
-    if (filters.rootSpan) {
-      const q = filters.rootSpan.toLowerCase();
-      result = result.filter(t => t.rootSpanName.toLowerCase().includes(q));
-    }
-
-    // Service filter
-    if (filters.service) {
-      const q = filters.service.toLowerCase();
-      result = result.filter(t => t.serviceName.toLowerCase().includes(q));
-    }
-
-    // Trace ID filter
-    if (filters.traceId) {
-      const q = filters.traceId.toLowerCase();
-      result = result.filter(t => t.traceId.toLowerCase().includes(q));
-    }
-
-    // Duration filter (values in ms)
-    if (filters.durationRange !== 'all') {
-      if (filters.durationRange === 'custom') {
-        const min = filters.durationMin ? parseFloat(filters.durationMin) : 0;
-        const max = filters.durationMax ? parseFloat(filters.durationMax) : Infinity;
-        result = result.filter(t => t.duration >= min && t.duration <= max);
-      } else if (filters.durationRange === '>10000') {
-        result = result.filter(t => t.duration > 10000);
-      } else {
-        const [min, max] = filters.durationRange.split('-').map(Number);
-        result = result.filter(t => t.duration >= min && t.duration < max);
-      }
-    }
-
-    // Span count filter
-    if (filters.spanCountRange !== 'all') {
-      if (filters.spanCountRange === 'custom') {
-        const min = filters.spanCountMin ? parseInt(filters.spanCountMin) : 0;
-        const max = filters.spanCountMax ? parseInt(filters.spanCountMax) : Infinity;
-        result = result.filter(t => t.spanCount >= min && t.spanCount <= max);
-      } else if (filters.spanCountRange === '>1000') {
-        result = result.filter(t => t.spanCount > 1000);
-      } else {
-        const [min, max] = filters.spanCountRange.split('-').map(Number);
-        result = result.filter(t => t.spanCount >= min && t.spanCount <= max);
-      }
-    }
-
-    // Time window filter (from chart clicks)
-    if (filters.timeWindowStart && filters.timeWindowEnd) {
-      const start = new Date(filters.timeWindowStart).getTime();
-      const end = new Date(filters.timeWindowEnd).getTime();
-      result = result.filter(t => {
-        const ts = t.startTime.getTime();
-        return ts >= start && ts < end;
-      });
-    }
-
-    // Text search as filter
-    if (debouncedSearch) {
-      const q = debouncedSearch.toLowerCase();
-      result = result.filter(t =>
-        t.traceId.toLowerCase().includes(q) ||
-        t.rootSpanName.toLowerCase().includes(q) ||
-        t.serviceName.toLowerCase().includes(q)
-      );
-    }
-
-    return result;
-  }, [allTraces, filters, debouncedSearch]);
 
   // Active filter chips
   const activeFilterChips = useMemo(() => {

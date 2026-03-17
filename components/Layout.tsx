@@ -11,6 +11,7 @@ import {
   Gauge,
   Activity,
   Search,
+  TestTube,
 } from "lucide-react";
 import OpenSearchLogoDark from "@/assets/opensearch-logo.svg";
 import OpenSearchLogoLight from "@/assets/opensearch-logo-light.svg";
@@ -217,7 +218,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                       <SidebarMenuButton
                         asChild
                         tooltip="Evals"
-                        isActive={isEvalsPath}
+                        isActive={isTestingPath}
                         className="h-9 w-full"
                       >
                         <div className="flex items-center w-full">
@@ -233,7 +234,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                             >
                               <ChevronDown 
                                 className={`h-3.5 w-3.5 transition-transform duration-200 ${
-                                  evalsOpen ? 'rotate-180' : ''
+                                  testingOpen ? 'rotate-180' : ''
                                 }`} 
                               />
                             </button>
