@@ -186,18 +186,19 @@ export const MetricsOverview: React.FC<MetricsOverviewProps> = ({
         <CardContent className="p-4 pt-2">
           <div className="grid grid-cols-3 gap-6 divide-x divide-dashed divide-border">
             {/* Trace Count - Outlined Bars (mirrors traces/spans sparkline) */}
-            <div className="space-y-2 pr-6">
-              <div className="flex items-center justify-between text-xs">
+            <div className="flex flex-col pr-6">
+              <div className="flex items-center justify-between text-xs mb-2">
                 <span className="font-medium text-muted-foreground">Trace Count</span>
                 <span className="text-[10px] text-muted-foreground">{formatCompact(totalRequests)} total</span>
               </div>
-              <div className="h-24 flex items-end gap-0.5">
+              <div className="flex-1" />
+              <div className="h-20 flex items-end gap-0.5">
                 {requestTimeSeries.map((point, idx) => (
                   <div key={idx} className="flex-1 relative group">
                     <div
                       className="w-full rounded-t transition-all bg-muted-foreground/20"
                       style={{
-                        height: `${(point.value / maxRequests) * 80}px`,
+                        height: `${(point.value / maxRequests) * 72}px`,
                         minHeight: point.value > 0 ? '4px' : '0px',
                       }}
                     />
@@ -212,15 +213,15 @@ export const MetricsOverview: React.FC<MetricsOverviewProps> = ({
                   </div>
                 ))}
               </div>
-              <div className="flex justify-between text-[9px] text-muted-foreground">
+              <div className="flex justify-between text-[9px] text-muted-foreground mt-2">
                 <span>Earlier</span>
                 <span>Now</span>
               </div>
             </div>
 
             {/* Error Count - Line Chart with Area Fill (mirrors errors sparkline) */}
-            <div className="space-y-2 px-6">
-              <div className="flex items-center justify-between text-xs">
+            <div className="flex flex-col px-6">
+              <div className="flex items-center justify-between text-xs mb-2">
                 <span className="font-medium text-muted-foreground">Error Count</span>
                 <button
                   onClick={() => onFilter?.({ type: 'status', value: 'error' })}
@@ -229,7 +230,8 @@ export const MetricsOverview: React.FC<MetricsOverviewProps> = ({
                   {formatCompact(totalErrors)} total
                 </button>
               </div>
-              <div className="h-24 relative">
+              <div className="flex-1" />
+              <div className="h-20 relative">
                 <svg className="w-full h-full" preserveAspectRatio="none">
                   <defs>
                     <linearGradient id="errorGradient" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -293,50 +295,53 @@ export const MetricsOverview: React.FC<MetricsOverviewProps> = ({
                   ))}
                 </div>
               </div>
-              <div className="flex justify-between text-[9px] text-muted-foreground">
+              <div className="flex justify-between text-[9px] text-muted-foreground mt-2">
                 <span>Earlier</span>
                 <span>Now</span>
               </div>
             </div>
 
             {/* Latency Distribution (mirrors latency sparkline) */}
-            <div className="space-y-2 pl-6">
-              <div className="flex items-center justify-between text-xs">
+            <div className="flex flex-col pl-6">
+              <div className="flex items-center justify-between text-xs mb-2">
                 <span className="font-medium text-muted-foreground">Latency Distribution</span>
                 <span className="text-[10px] text-muted-foreground">{formatDuration(avgLatency)} avg</span>
               </div>
-              <div className="h-24 flex items-end gap-1">
+              <div className="flex-1" />
+              <div className="h-20 flex items-end gap-1">
                 {latencyDistribution.map((bucket, idx) => (
-                  <div key={idx} className="flex-1 flex flex-col items-center gap-1">
-                    <div className="w-full relative group">
-                      <div
-                        className={cn(
-                          'w-full rounded-t transition-all',
-                          getLatencyColor(bucket)
-                        )}
-                        style={{
-                          height: `${(bucket.count / maxLatencyCount) * 80}px`,
-                          minHeight: bucket.count > 0 ? '4px' : '0px',
-                        }}
-                      />
-                      {bucket.count > 0 && (
-                        <button
-                          onClick={() => onFilter?.({
-                            type: 'durationRange',
-                            value: bucket.max === Infinity ? `>${bucket.min}` : `${bucket.min}-${bucket.max}`,
-                            durationMin: String(bucket.min),
-                            durationMax: bucket.max === Infinity ? '' : String(bucket.max),
-                          })}
-                          className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-medium opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap cursor-pointer hover:underline bg-background px-1 rounded"
-                        >
-                          {bucket.count}
-                        </button>
+                  <div key={idx} className="flex-1 relative group">
+                    <div
+                      className={cn(
+                        'w-full rounded-t transition-all',
+                        getLatencyColor(bucket)
                       )}
-                    </div>
-                    <span className="text-[9px] text-muted-foreground text-center leading-tight truncate w-full" title={bucket.label}>
-                      {bucket.label}
-                    </span>
+                      style={{
+                        height: `${(bucket.count / maxLatencyCount) * 72}px`,
+                        minHeight: bucket.count > 0 ? '4px' : '0px',
+                      }}
+                    />
+                    {bucket.count > 0 && (
+                      <button
+                        onClick={() => onFilter?.({
+                          type: 'durationRange',
+                          value: bucket.max === Infinity ? `>${bucket.min}` : `${bucket.min}-${bucket.max}`,
+                          durationMin: String(bucket.min),
+                          durationMax: bucket.max === Infinity ? '' : String(bucket.max),
+                        })}
+                        className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-medium opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap cursor-pointer hover:underline bg-background px-1 rounded"
+                      >
+                        {bucket.count}
+                      </button>
+                    )}
                   </div>
+                ))}
+              </div>
+              <div className="flex justify-between text-[9px] text-muted-foreground mt-2">
+                {latencyDistribution.map((bucket, idx) => (
+                  <span key={idx} className="flex-1 text-center truncate" title={bucket.label}>
+                    {bucket.label}
+                  </span>
                 ))}
               </div>
             </div>
