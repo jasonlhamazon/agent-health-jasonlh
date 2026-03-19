@@ -62,7 +62,7 @@ router.get('/api/agents', (req: Request, res: Response) => {
 const VALID_CONNECTOR_TYPES: ConnectorProtocol[] = [
   'agui-streaming',
   'rest',
-  'litellm',
+  'openai-compatible',
   'subprocess',
   'claude-code',
   'mock',
@@ -107,7 +107,6 @@ router.post('/api/agents/custom', (req: Request, res: Response) => {
       isCustom: true,
       connectorType: connectorType ?? 'agui-streaming',
       useTraces: useTraces === true,
-      models: [],
       headers: {},
     };
 

@@ -31,6 +31,8 @@ import {
   saveObservabilityConfig,
   clearStorageConfig,
   clearObservabilityConfig,
+  retryStorageConnection,
+  useFileStorage,
   type ConfigStatus,
   type SaveStorageConfigResult,
 } from '@/lib/dataSourceConfig';
@@ -93,6 +95,7 @@ export const SettingsPage: React.FC = () => {
   const [newConnectorType, setNewConnectorType] = useState<ConnectorProtocol>('agui-streaming');
   const [newUseTraces, setNewUseTraces] = useState(false);
   const [endpointUrlError, setEndpointUrlError] = useState<string | null>(null);
+  const [showBuiltInAgents, setShowBuiltInAgents] = useState(false);
 
   // Data source configuration state (form inputs - not stored values)
   const [storageConfig, setStorageConfigState] = useState({
@@ -827,66 +830,6 @@ export const SettingsPage: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Debug Settings */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Debug Settings</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <Label htmlFor="debug-mode" className="text-sm font-medium">
-                Debug Mode
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                Enable verbose logging (console.debug) AND real-time performance metrics overlay.
-                Useful for debugging evaluation flow, SSE events, and performance issues.
-              </p>
-            </div>
-            <Switch
-              id="debug-mode"
-              checked={debugMode}
-              onCheckedChange={handleDebugToggle}
-            />
-          </div>
-
-          {debugMode && (
-            <Alert className="bg-amber-900/20 border-amber-700/30">
-              <AlertTriangle className="h-4 w-4 text-amber-400" />
-              <AlertDescription className="text-amber-400">
-                <div className="space-y-2">
-                  <div className="font-medium">Debug mode enabled</div>
-
-                  {/* Verbose Logging Info */}
-                  <div className="text-sm">
-                    <strong>Verbose Logging:</strong> Detailed logs appear in browser console and server terminal.
-                  </div>
-                  <div className="text-xs opacity-80">
-                    <strong>Note:</strong> Browser debug logs use console.debug() which may be hidden by default.
-                    <br />
-                    • <strong>Chrome:</strong> Console settings (⚙️) → Check "Verbose"
-                    <br />
-                    • <strong>Firefox:</strong> Console settings → Enable all log levels
-                    <br />
-                    • <strong>Safari:</strong> Develop → Show JavaScript Console → All levels
-                  </div>
-
-                  {/* Performance Monitoring Info */}
-                  <div className="text-sm mt-3 pt-3 border-t border-amber-700/30">
-                    <strong>Performance Monitoring:</strong> A metrics overlay will appear in the bottom-right corner on instrumented pages (Agent Traces, etc.).
-                  </div>
-                  <div className="text-xs opacity-80">
-                    <strong>Color coding:</strong> 🟢 Fast (&lt; 50ms) · 🟡 OK (&lt; 200ms) · 🔴 Slow (&gt; 200ms)
-                    <br />
-                    <strong>Tracked:</strong> API calls, tree processing, render performance
-                  </div>
-                </div>
-              </AlertDescription>
-            </Alert>
-          )}
-        </CardContent>
-      </Card>
-
       {/* Agent Endpoints */}
       <Card className="mb-6">
         <CardHeader>
@@ -896,35 +839,39 @@ export const SettingsPage: React.FC = () => {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Built-in Agents */}
+          {/* Built-in Agents (collapsible) */}
           <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground uppercase tracking-wide">Built-in Agents</Label>
+            <button
+              type="button"
+              onClick={() => setShowBuiltInAgents(!showBuiltInAgents)}
+              className="flex items-center gap-1 text-xs text-muted-foreground uppercase tracking-wide hover:text-foreground"
+            >
+              {showBuiltInAgents ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+              Built-in Agents ({DEFAULT_CONFIG.agents.filter(a => !a.isCustom).length})
+            </button>
 
-            {DEFAULT_CONFIG.agents.filter(a => !a.isCustom).map((agent) => {
-
-              return (
-                <div
-                  key={agent.key}
-                  className="p-3 border rounded-lg bg-muted/5 flex items-start justify-between gap-3"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm flex items-center gap-2">
-                      {agent.name}
-                      <span className="text-xs px-2 py-1 rounded inline-block bg-blue-100 text-blue-900 border border-blue-300 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-700/50">
-                        built-in
-                      </span>
-                    </div>
-                    <div className="text-xs text-muted-foreground truncate flex items-center gap-1 mt-1">
-                      <ExternalLink size={10} />
-                      {agent.endpoint || <span className="italic">Not configured</span>}
-                    </div>
-                    {agent.description && (
-                      <div className="text-xs text-muted-foreground mt-1">{agent.description}</div>
-                    )}
+            {showBuiltInAgents && DEFAULT_CONFIG.agents.filter(a => !a.isCustom).map((agent) => (
+              <div
+                key={agent.key}
+                className="p-3 border rounded-lg bg-muted/5 flex items-start justify-between gap-3"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-sm flex items-center gap-2">
+                    {agent.name}
+                    <span className="text-xs px-2 py-1 rounded inline-block bg-blue-100 text-blue-900 border border-blue-300 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-700/50">
+                      built-in
+                    </span>
                   </div>
+                  <div className="text-xs text-muted-foreground truncate flex items-center gap-1 mt-1">
+                    <ExternalLink size={10} />
+                    {agent.endpoint || <span className="italic">Not configured</span>}
+                  </div>
+                  {agent.description && (
+                    <div className="text-xs text-muted-foreground mt-1">{agent.description}</div>
+                  )}
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
 
           {/* Custom Endpoints Section */}
@@ -984,7 +931,7 @@ export const SettingsPage: React.FC = () => {
                   <SelectContent>
                     <SelectItem value="agui-streaming">agui-streaming (default)</SelectItem>
                     <SelectItem value="rest">rest</SelectItem>
-                    <SelectItem value="litellm">litellm</SelectItem>
+                    <SelectItem value="openai-compatible">openai-compatible</SelectItem>
                     <SelectItem value="subprocess">subprocess</SelectItem>
                     <SelectItem value="claude-code">claude-code</SelectItem>
                     <SelectItem value="mock">mock</SelectItem>
@@ -1052,7 +999,7 @@ export const SettingsPage: React.FC = () => {
                           <SelectContent>
                             <SelectItem value="agui-streaming">agui-streaming (default)</SelectItem>
                             <SelectItem value="rest">rest</SelectItem>
-                            <SelectItem value="litellm">litellm</SelectItem>
+                            <SelectItem value="openai-compatible">openai-compatible</SelectItem>
                             <SelectItem value="subprocess">subprocess</SelectItem>
                             <SelectItem value="claude-code">claude-code</SelectItem>
                             <SelectItem value="mock">mock</SelectItem>
@@ -1141,12 +1088,13 @@ export const SettingsPage: React.FC = () => {
             Evaluation Storage
           </CardTitle>
           <p className="text-sm text-muted-foreground">
-            Test cases, experiments, and run results
+            Test cases, experiments, and run results.
+            Uses local filesystem (<code className="text-xs bg-muted/50 px-1 rounded">agent-health-data/</code>) if not configured.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
           <p className="text-xs text-muted-foreground">
-            Configure the OpenSearch cluster for storing evaluation data. Credentials are stored securely on the server (in agent-health.config.json), not in your browser.
+            Optionally configure an OpenSearch cluster for persistent storage. Credentials are stored on the server (in agent-health.config.json), not in your browser.
           </p>
 
           <div className="space-y-3">
@@ -1284,15 +1232,105 @@ export const SettingsPage: React.FC = () => {
             <div className="flex items-center gap-2 text-xs">
               <span className="text-muted-foreground">Currently configured via:</span>
               <span className={`px-2 py-0.5 rounded ${
-                configStatus.storage.source === 'file' 
+                configStatus.storage.source === 'file'
                   ? 'bg-green-100 text-green-900 border border-green-300 dark:bg-green-950/50 dark:text-green-300 dark:border-green-700/50'
-                  : configStatus.storage.source === 'environment' 
+                  : configStatus.storage.source === 'environment'
                   ? 'bg-blue-100 text-blue-900 border border-blue-300 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-700/50'
                   : 'bg-gray-100 text-gray-900 border border-gray-300 dark:bg-gray-800/50 dark:text-gray-400 dark:border-gray-700/50'
               }`}>
                 {configStatus.storage.source === 'file' ? 'Config file (agent-health.config.json)' :
                  configStatus.storage.source === 'environment' ? 'Environment variables' :
                  'Not configured'}
+              </span>
+            </div>
+          )}
+
+          {/* Runtime storage state */}
+          {configStatus?.runtime?.storage.backend === 'error' && (
+            <Alert variant="destructive" className="py-2">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription className="flex items-center justify-between">
+                <span className="text-sm">
+                  Storage configured but unreachable: {configStatus.runtime.storage.error}
+                </span>
+                <span className="flex gap-2 ml-4 shrink-0">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        await retryStorageConnection();
+                        const status = await getConfigStatus();
+                        setConfigStatus(status);
+                      } catch (e: any) {
+                        console.error('Retry failed:', e.message);
+                      }
+                    }}
+                  >
+                    <RefreshCw size={14} className="mr-1" />
+                    Retry
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        await useFileStorage();
+                        const status = await getConfigStatus();
+                        setConfigStatus(status);
+                      } catch (e: any) {
+                        console.error('Use file storage failed:', e.message);
+                      }
+                    }}
+                  >
+                    <Database size={14} className="mr-1" />
+                    Use File Storage
+                  </Button>
+                </span>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {configStatus?.runtime?.storage.drifted && configStatus.runtime.storage.backend !== 'error' && (
+            <Alert className="py-2 border-yellow-500/50 bg-yellow-50 dark:bg-yellow-950/20">
+              <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+              <AlertDescription className="flex items-center justify-between">
+                <span className="text-sm text-yellow-800 dark:text-yellow-300">
+                  Config file changed. Runtime storage may be out of date.
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="ml-4 shrink-0"
+                  onClick={async () => {
+                    try {
+                      await retryStorageConnection();
+                      const status = await getConfigStatus();
+                      setConfigStatus(status);
+                    } catch (e: any) {
+                      console.error('Apply failed:', e.message);
+                    }
+                  }}
+                >
+                  <RefreshCw size={14} className="mr-1" />
+                  Apply Now
+                </Button>
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {configStatus?.runtime?.storage && !configStatus.runtime.storage.drifted && configStatus.runtime.storage.backend !== 'error' && (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-muted-foreground">Runtime:</span>
+              <span className={`flex items-center gap-1 px-2 py-0.5 rounded ${
+                configStatus.runtime.storage.backend === 'opensearch'
+                  ? 'bg-green-100 text-green-900 border border-green-300 dark:bg-green-950/50 dark:text-green-300 dark:border-green-700/50'
+                  : 'bg-gray-100 text-gray-900 border border-gray-300 dark:bg-gray-800/50 dark:text-gray-400 dark:border-gray-700/50'
+              }`}>
+                {configStatus.runtime.storage.backend === 'opensearch' && <CheckCircle2 size={12} />}
+                {configStatus.runtime.storage.backend === 'opensearch'
+                  ? `OpenSearch (${configStatus.runtime.storage.configuredEndpoint})`
+                  : 'File Storage'}
               </span>
             </div>
           )}
@@ -1785,6 +1823,39 @@ export const SettingsPage: React.FC = () => {
           </CardContent>
         </Card>
       )}
+      {/* Debug Settings */}
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Debug Settings</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="debug-mode" className="text-sm font-medium">
+                Debug Mode
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Verbose logging and real-time performance metrics overlay
+              </p>
+            </div>
+            <Switch
+              id="debug-mode"
+              checked={debugMode}
+              onCheckedChange={handleDebugToggle}
+            />
+          </div>
+
+          {debugMode && (
+            <Alert className="bg-amber-900/20 border-amber-700/30 mt-4">
+              <AlertTriangle className="h-4 w-4 text-amber-400" />
+              <AlertDescription className="text-amber-400 text-xs">
+                <strong>Enabled:</strong> Detailed logs in browser console (enable "Verbose" level) and server terminal.
+                A performance overlay will appear on instrumented pages.
+              </AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
     </div>
 
     {/* Index Fix Progress Modal */}
