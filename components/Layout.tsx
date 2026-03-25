@@ -66,7 +66,16 @@ const navItems = [
 
 const evalsSubItems = [
   { to: "/test-cases", label: "Test Cases", testId: "nav-test-cases" },
+  { to: "/test-cases-v2", label: "Test Cases v2", testId: "nav-test-cases-v2" },
+  { to: "/test-cases-v3", label: "Test Cases v3", testId: "nav-test-cases-v3" },
   { to: "/benchmarks", label: "Benchmarks", testId: "nav-benchmarks" },
+  { to: "/benchmarks2", label: "Benchmarks v2", testId: "nav-benchmarks2" },
+  { to: "/benchmarks3", label: "Benchmarks v3", testId: "nav-benchmarks3" },
+];
+
+const evals2SubItems = [
+  { to: "/evals2/benchmarks", label: "Benchmarks", testId: "nav-evals2-benchmarks" },
+  { to: "/evals2/test-cases", label: "Test Cases", testId: "nav-evals2-test-cases" },
 ];
 
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
@@ -77,8 +86,10 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   // Determine if evals section should be open based on current path
   const isEvalsPath = location.pathname.startsWith("/test-cases") ||
                       location.pathname.startsWith("/benchmarks");
+  const isEvals2Path = location.pathname.startsWith("/evals2");
   // Keep evals dropdown always open
   const [evalsOpen, setEvalsOpen] = useState(true);
+  const [evals2Open, setEvals2Open] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [isCollapsed, setIsCollapsed] = useState(false);
   
@@ -271,6 +282,76 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                       className="h-9"
                     >
                       <Link to="/benchmarks" className="justify-center">
+                        <TestTube className="h-4 w-4" />
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
+
+                {/* Evals 2 collapsible section - only show when expanded */}
+                {!isCollapsed && (
+                  <Collapsible
+                    open={evals2Open}
+                    onOpenChange={setEvals2Open}
+                  >
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        asChild
+                        tooltip="Evals 2"
+                        isActive={isEvals2Path}
+                        className="h-9 w-full"
+                      >
+                        <div className="flex items-center w-full">
+                          <Link to="/evals2/benchmarks" className="flex items-center gap-2 flex-1 min-w-0">
+                            <TestTube className="h-3.5 w-3.5" />
+                            <span className="text-xs">Evals 2</span>
+                          </Link>
+                          <CollapsibleTrigger asChild>
+                            <button
+                              onClick={(e) => e.stopPropagation()}
+                              className="p-0.5 rounded hover:bg-muted-foreground/20 transition-colors ml-auto"
+                              aria-label="Toggle evals 2 submenu"
+                            >
+                              <ChevronDown 
+                                className={`h-3.5 w-3.5 transition-transform duration-200 ${
+                                  evals2Open ? 'rotate-180' : ''
+                                }`} 
+                              />
+                            </button>
+                          </CollapsibleTrigger>
+                        </div>
+                      </SidebarMenuButton>
+                      <CollapsibleContent>
+                        <SidebarMenuSub className="ml-4 mt-1 space-y-1">
+                          {evals2SubItems.map((item) => (
+                            <SidebarMenuSubItem key={item.to}>
+                              <SidebarMenuSubButton
+                                asChild
+                                isActive={location.pathname === item.to || location.pathname.startsWith(item.to + "/")}
+                                data-testid={item.testId}
+                                className="h-8"
+                              >
+                                <Link to={item.to} className="text-xs">{item.label}</Link>
+                              </SidebarMenuSubButton>
+                            </SidebarMenuSubItem>
+                          ))}
+                        </SidebarMenuSub>
+                      </CollapsibleContent>
+                    </SidebarMenuItem>
+                  </Collapsible>
+                )}
+
+                {/* Evals 2 icon only when collapsed */}
+                {isCollapsed && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={isEvals2Path}
+                      tooltip="Evals 2"
+                      data-testid="nav-evals2"
+                      className="h-9"
+                    >
+                      <Link to="/evals2/benchmarks" className="justify-center">
                         <TestTube className="h-4 w-4" />
                       </Link>
                     </SidebarMenuButton>
