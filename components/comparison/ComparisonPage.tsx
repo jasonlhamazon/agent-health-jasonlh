@@ -295,7 +295,7 @@ export const ComparisonPage: React.FC = () => {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate(`/benchmarks/${benchmarkId}/runs`)}
+            onClick={() => navigate(-1)}
             data-testid="back-button"
           >
             <ArrowLeft size={18} />

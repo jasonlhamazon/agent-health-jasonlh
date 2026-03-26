@@ -540,7 +540,7 @@ export const BenchmarkRunsPage2: React.FC = () => {
                       isSelected ? 'border-primary bg-primary/5' : 'hover:border-primary/50'
                     }`}
                     onClick={() => {
-                      const runDetailPath = `/evals3/benchmarks/${benchmarkId}/runs/${run.id}`;
+                      const runDetailPath = `/evals3/benchmarks/${benchmarkId}/runs/${run.id}/inspect`;
                       navigate(runDetailPath);
                     }}
                   >

@@ -112,6 +112,9 @@ export const EvalRunsPage: React.FC = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Compare selection
+  const [selectedRuns, setSelectedRuns] = useState<Set<string>>(new Set());
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -207,6 +210,40 @@ export const EvalRunsPage: React.FC = () => {
     });
   };
 
+  // Compare selection helpers
+  const MAX_COMPARE = 10;
+
+  const toggleRunSelection = (runId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedRuns(prev => {
+      const n = new Set(prev);
+      if (n.has(runId)) {
+        n.delete(runId);
+      } else {
+        if (n.size >= MAX_COMPARE) return prev; // cap at 10
+        n.add(runId);
+      }
+      return n;
+    });
+  };
+
+  const atLimit = selectedRuns.size >= MAX_COMPARE;
+
+  // Toggle all runs in a benchmark group (bypasses individual limit)
+  const toggleBenchmarkSelection = (groupRunIds: string[], e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedRuns(prev => {
+      const n = new Set(prev);
+      const allSelected = groupRunIds.every(id => n.has(id));
+      if (allSelected) {
+        groupRunIds.forEach(id => n.delete(id));
+      } else {
+        groupRunIds.forEach(id => n.add(id));
+      }
+      return n;
+    });
+  };
+
   // Grouped by benchmark
   const groupedByBenchmark = useMemo(() => {
     const groups = new Map<string, { id: string; name: string; rows: RunRow[] }>();
@@ -220,12 +257,33 @@ export const EvalRunsPage: React.FC = () => {
   // Render a run row
   const renderRunRow = (rr: RunRow, showBenchmark: boolean) => {
     const isAllPassed = rr.failed === 0 && rr.passed > 0;
+    const isChecked = selectedRuns.has(rr.run.id);
     return (
       <tr
         key={`${rr.benchmarkId}-${rr.run.id}`}
-        className="border-b hover:bg-muted/50 cursor-pointer transition-colors"
+        className={`border-b hover:bg-muted/50 cursor-pointer transition-colors ${isChecked ? 'bg-primary/5' : ''}`}
         onClick={() => navigate(`/evals3/benchmarks/${rr.benchmarkId}/runs/${rr.run.id}/inspect`)}
       >
+        <td className="px-2 py-2.5 align-middle text-center w-8" onClick={e => e.stopPropagation()}>
+          <button
+            onClick={e => toggleRunSelection(rr.run.id, e)}
+            disabled={!isChecked && atLimit}
+            className={`h-4 w-4 rounded border-2 flex items-center justify-center transition-colors shrink-0
+              ${isChecked
+                ? 'bg-primary border-primary text-primary-foreground'
+                : atLimit
+                  ? 'border-muted-foreground/20 bg-muted/30 cursor-not-allowed'
+                  : 'border-muted-foreground/40 hover:border-muted-foreground/70 bg-transparent cursor-pointer'
+              }`}
+            aria-label={isChecked ? 'Deselect run' : 'Select run for comparison'}
+          >
+            {isChecked && (
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="shrink-0">
+                <path d="M2 5L4.5 7.5L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </button>
+        </td>
         <td className="px-2 py-2.5 align-middle text-center w-8">
           {isAllPassed
             ? <CheckCircle2 size={13} className="text-green-500" />
@@ -343,6 +401,7 @@ export const EvalRunsPage: React.FC = () => {
           <thead className={`sticky top-0 z-10 bg-background transition-shadow duration-200 ${isScrolled ? 'shadow-sm' : ''}`}>
             <tr className="border-b">
               <th className="h-8 w-8 px-2 align-middle bg-background border-b" />
+              <th className="h-8 w-8 px-2 align-middle bg-background border-b" />
               <SortHeader label="Run" active={sort.field === 'runId'} dir={sort.dir} onClick={() => handleSort('runId')} />
               {viewMode === 'flat' && (
                 <SortHeader label="Benchmark" active={sort.field === 'benchmark'} dir={sort.dir} onClick={() => handleSort('benchmark')} />
@@ -357,7 +416,7 @@ export const EvalRunsPage: React.FC = () => {
           <tbody className="[&_tr:last-child]:border-0">
             {allRunRows.length === 0 ? (
               <tr>
-                <td colSpan={viewMode === 'flat' ? 8 : 7} className="py-16 text-center text-sm text-muted-foreground">
+                <td colSpan={viewMode === 'flat' ? 9 : 8} className="py-16 text-center text-sm text-muted-foreground">
                   {timeRange === 'all' ? 'No evaluation runs found' : `No runs in ${TIME_OPTIONS.find(o => o.value === timeRange)?.label}`}
                 </td>
               </tr>
@@ -368,13 +427,39 @@ export const EvalRunsPage: React.FC = () => {
                 const isCollapsed = collapsedGroups.has(group.id);
                 const sorted = sortRows(group.rows);
                 const groupPassed = group.rows.filter(r => r.failed === 0 && r.passed > 0).length;
+                const groupRunIds = group.rows.map(r => r.run.id);
+                const allGroupSelected = groupRunIds.length > 0 && groupRunIds.every(id => selectedRuns.has(id));
+                const someGroupSelected = groupRunIds.some(id => selectedRuns.has(id));
                 return (
                   <React.Fragment key={group.id}>
                     <tr
                       className="border-b cursor-pointer hover:bg-muted/30 transition-colors bg-purple-50 dark:bg-purple-500/5"
                       onClick={() => toggleGroup(group.id)}
                     >
-                      <td colSpan={7} className="px-3 py-2 align-middle">
+                      {/* Checkbox cell — aligns with run row checkboxes */}
+                      <td className="px-2 py-2 align-middle text-center w-8" onClick={e => e.stopPropagation()}>
+                        <button
+                          onClick={e => toggleBenchmarkSelection(groupRunIds, e)}
+                          className={`h-4 w-4 rounded border-2 flex items-center justify-center transition-colors shrink-0
+                            ${allGroupSelected
+                              ? 'bg-primary border-primary text-primary-foreground'
+                              : someGroupSelected
+                                ? 'bg-primary/40 border-primary/60 text-primary-foreground'
+                                : 'border-muted-foreground/40 hover:border-muted-foreground/70 bg-transparent cursor-pointer'
+                            }`}
+                          aria-label={allGroupSelected ? 'Deselect all runs in benchmark' : 'Select all runs in benchmark'}
+                        >
+                          {allGroupSelected ? (
+                            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="shrink-0">
+                              <path d="M2 5L4.5 7.5L8 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          ) : someGroupSelected ? (
+                            <div className="w-2 h-0.5 bg-current rounded-full" />
+                          ) : null}
+                        </button>
+                      </td>
+                      {/* Rest of group header content */}
+                      <td colSpan={7} className="px-1 py-2 align-middle">
                         <div className="flex items-center gap-2">
                           <span className="text-muted-foreground">
                             {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
@@ -396,6 +481,54 @@ export const EvalRunsPage: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      {/* ── Floating Compare Bar ───────────────────────────────────── */}
+      {selectedRuns.size >= 2 && (() => {
+        const selectedRows = allRunRows.filter(rr => selectedRuns.has(rr.run.id));
+        const benchmarkIds = new Set(selectedRows.map(rr => rr.benchmarkId));
+        const multiBenchmark = benchmarkIds.size > 1;
+        return (
+        <div className="sticky bottom-0 left-0 right-0 border-t bg-card/95 backdrop-blur-sm px-4 py-2.5 flex items-center justify-between z-20 shadow-[0_-2px_8px_rgba(0,0,0,0.1)]">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Badge variant="secondary" className="text-[10px] font-semibold">{selectedRuns.size}</Badge>
+            <span>runs selected{atLimit ? ' (max 10)' : ''}</span>
+            {multiBenchmark && (
+              <span className="text-amber-600 dark:text-amber-400 text-[10px]">· {benchmarkIds.size} benchmarks — compare works per benchmark</span>
+            )}
+            <button
+              className="text-[10px] text-muted-foreground hover:text-foreground underline ml-1"
+              onClick={() => setSelectedRuns(new Set())}
+            >
+              Clear
+            </button>
+          </div>
+          <Button
+            size="sm"
+            className="h-7 px-4 text-xs gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90"
+            onClick={() => {
+              // Find the benchmark(s) for selected runs
+              const selectedRows = allRunRows.filter(rr => selectedRuns.has(rr.run.id));
+              const benchmarkIds = new Set(selectedRows.map(rr => rr.benchmarkId));
+              const ids = selectedRows.map(rr => rr.run.id).join(',');
+
+              if (benchmarkIds.size === 1) {
+                // All from same benchmark — use existing compare page
+                const bmId = [...benchmarkIds][0];
+                navigate(`/compare/${bmId}?runs=${ids}`);
+              } else {
+                // Multiple benchmarks — navigate to first benchmark's compare with all run IDs
+                // ComparisonPage will filter to valid runs for that benchmark
+                const bmId = [...benchmarkIds][0];
+                navigate(`/compare/${bmId}?runs=${ids}`);
+              }
+            }}
+          >
+            <BarChart3 size={12} />
+            Compare {selectedRuns.size} Runs
+          </Button>
+        </div>
+        );
+      })()}
     </div>
   );
 };
