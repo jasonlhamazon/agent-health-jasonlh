@@ -1,10 +1,20 @@
 /*
- * TestCaseDetailPage — Evals 3: Test Case drill-down (Option A)
+ * TestCaseDetailPage — Evals 3: Test Case drill-down
  *
- * Layout:
- *   1. Entity card with "TEST CASE" type badge, name, labels, metadata
- *   2. Collapsible "Definition" section (prompt, expected outcomes, context)
- *   3. Full-width runs timeline with time filter
+ * Split-panel layout matching RunInspectorPage:
+ *   ┌─────────────────────────────────────────────────────────────────┐
+ *   │ ← Back to Test Cases   Test Case Name        Edit | Run Test   │
+ *   │ [TEST CASE] · labels · Created date · X runs · pass rate       │
+ *   ├──────────────────┬──────────────────────────────────────────────┤
+ *   │ Left Panel       │ Right Panel                                  │
+ *   │ ▸ DEFINITION     │ TestCaseInspectorPanel for selected run      │
+ *   │   5 expected     │                                              │
+ *   │   3 context      │                                              │
+ *   │ ─────────────    │                                              │
+ *   │ RUNS (timeline)  │                                              │
+ *   │ ✓ PASSED  88%    │                                              │
+ *   │ ✗ FAILED  33%    │                                              │
+ *   └──────────────────┴──────────────────────────────────────────────┘
  *
  * Route: /evals3/test-cases/:testCaseId
  */
@@ -13,41 +23,40 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Play, Calendar, CheckCircle2, XCircle, Trash2, Pencil,
-  Loader2, X, ChevronDown, ChevronRight, FileText, Clock,
+  Loader2, ChevronDown, ChevronRight, FileText, Clock, Target,
 } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { asyncTestCaseStorage, asyncRunStorage } from '@/services/storage';
 import { TestCase, EvaluationReport } from '@/types';
 import { DEFAULT_CONFIG } from '@/lib/constants';
-import { getLabelColor, formatDate, formatRelativeTime } from '@/lib/utils';
+import { getLabelColor, formatDate, formatRelativeTime, getModelName } from '@/lib/utils';
 import { QuickRunModal } from '../QuickRunModal';
 import { TestCaseEditor } from '../TestCaseEditor';
-import { RunDetailsFlyout } from './RunDetailsFlyout';
-
-// ─── Time Filter ─────────────────────────────────────────────────────────────
+import { TestCaseInspectorPanel } from './TestCaseInspectorPanel';
 
 type TimeRange = '1h' | '6h' | '1d' | '7d' | '30d' | 'all';
 const TIME_OPTIONS: { value: TimeRange; label: string }[] = [
-  { value: '1h', label: 'Last 1h' },
-  { value: '6h', label: 'Last 6h' },
-  { value: '1d', label: 'Last 1d' },
   { value: '7d', label: 'Last 7d' },
   { value: '30d', label: 'Last 30d' },
   { value: 'all', label: 'All time' },
 ];
-
 function getTimeThreshold(range: TimeRange): Date | null {
   if (range === 'all') return null;
-  const now = new Date();
   const ms: Record<string, number> = { '1h': 3600000, '6h': 21600000, '1d': 86400000, '7d': 604800000, '30d': 2592000000 };
-  return new Date(now.getTime() - ms[range]);
+  return new Date(Date.now() - ms[range]);
 }
 
-
-// ─── Main Component ──────────────────────────────────────────────────────────
+type ResultStatus = 'passed' | 'failed' | 'running' | 'pending';
+function getStatus(r: EvaluationReport): ResultStatus {
+  if (r.passFailStatus === 'passed') return 'passed';
+  if (r.passFailStatus === 'failed') return 'failed';
+  if (r.status === 'running') return 'running';
+  return 'pending';
+}
 
 export const TestCaseDetailPage: React.FC = () => {
   const { testCaseId } = useParams<{ testCaseId: string }>();
@@ -57,20 +66,13 @@ export const TestCaseDetailPage: React.FC = () => {
   const [runs, setRuns] = useState<EvaluationReport[]>([]);
   const [totalRuns, setTotalRuns] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   // UI state
   const [definitionOpen, setDefinitionOpen] = useState(false);
-  const [timeRange, setTimeRange] = useState<TimeRange>('7d');
+  const [timeRange, setTimeRange] = useState<TimeRange>('all');
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [runningTestCase, setRunningTestCase] = useState<TestCase | null>(null);
   const [showEditor, setShowEditor] = useState(false);
-  const [flyoutReport, setFlyoutReport] = useState<EvaluationReport | null>(null);
-
-  // Delete state
-  const [deleteState, setDeleteState] = useState<{
-    isDeleting: boolean; deletingId: string | null;
-    status: 'idle' | 'success' | 'error'; message: string;
-  }>({ isDeleting: false, deletingId: null, status: 'idle', message: '' });
 
   const loadData = useCallback(async () => {
     if (!testCaseId) return;
@@ -82,348 +84,234 @@ export const TestCaseDetailPage: React.FC = () => {
       ]);
       if (!tc) { navigate('/evals3/test-cases'); return; }
       setTestCase(tc);
-      setRuns(reports.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+      const sorted = reports.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      setRuns(sorted);
       setTotalRuns(total);
+      // Auto-select first run
+      if (sorted.length > 0 && !selectedRunId) setSelectedRunId(sorted[0].id);
     } catch (error) {
       console.error('Failed to load test case:', error);
     } finally {
       setIsLoading(false);
     }
-  }, [testCaseId, navigate]);
+  }, [testCaseId, navigate, selectedRunId]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Time-filtered runs
   const filteredRuns = useMemo(() => {
     const threshold = getTimeThreshold(timeRange);
     if (!threshold) return runs;
     return runs.filter(r => new Date(r.timestamp) >= threshold);
   }, [runs, timeRange]);
 
-  // Stats
   const passCount = filteredRuns.filter(r => r.passFailStatus === 'passed').length;
   const failCount = filteredRuns.filter(r => r.passFailStatus === 'failed').length;
   const passRate = filteredRuns.length > 0 ? Math.round((passCount / filteredRuns.length) * 100) : 0;
 
-  const handleRunClick = (run: EvaluationReport) => setFlyoutReport(run);
+  const selectedRun = filteredRuns.find(r => r.id === selectedRunId) || null;
 
-  const handleDeleteRun = async (run: EvaluationReport) => {
-    if (!window.confirm(`Delete this run from ${formatDate(run.timestamp)}?`)) return;
-    setDeleteState({ isDeleting: true, deletingId: run.id, status: 'idle', message: '' });
-    try {
-      const success = await asyncRunStorage.deleteReport(run.id);
-      if (success) {
-        setDeleteState({ isDeleting: false, deletingId: null, status: 'success', message: 'Run deleted' });
-        setTimeout(() => setDeleteState(s => ({ ...s, status: 'idle', message: '' })), 3000);
-        loadData();
-      } else {
-        setDeleteState({ isDeleting: false, deletingId: null, status: 'error', message: 'Failed to delete' });
-      }
-    } catch (error) {
-      setDeleteState({ isDeleting: false, deletingId: null, status: 'error',
-        message: `Error: ${error instanceof Error ? error.message : 'Unknown'}` });
-    }
-  };
-
-  const loadMore = useCallback(async () => {
-    if (!testCaseId || isLoadingMore) return;
-    setIsLoadingMore(true);
-    try {
-      const { reports } = await asyncRunStorage.getReportsByTestCase(testCaseId, { limit: 100, offset: runs.length });
-      setRuns(prev => [...prev, ...reports.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())]);
-    } catch (error) {
-      console.error('Failed to load more:', error);
-    } finally {
-      setIsLoadingMore(false);
-    }
-  }, [testCaseId, runs.length, isLoadingMore]);
-
-  if (isLoading) {
+  if (isLoading || !testCase) {
     return (
       <div className="p-6 space-y-4">
-        <Skeleton className="h-10 w-40" />
-        <Skeleton className="h-32 w-full" />
-        <Skeleton className="h-64 w-full" />
+        <Skeleton className="h-10 w-60" />
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-[calc(100vh-200px)] w-full" />
       </div>
     );
   }
 
-  if (!testCase) return null;
-
-
   return (
-    <div className="p-6 h-full overflow-y-auto">
-      {/* ── Back + Actions ─────────────────────────────────────────── */}
-      <div className="flex items-center justify-between mb-4">
-        <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="gap-1.5">
-          <ArrowLeft size={16} /> Back to Test Cases
-        </Button>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setShowEditor(true)}>
-            <Pencil size={14} className="mr-1" /> Edit
-          </Button>
-          <Button size="sm" onClick={() => setRunningTestCase(testCase)} className="bg-opensearch-blue hover:bg-blue-600">
-            <Play size={14} className="mr-1" /> Run Test
-          </Button>
+    <div className="h-full flex flex-col">
+      {/* ── Top Summary Bar ────────────────────────────────────────── */}
+      <div className="px-4 py-3 border-b bg-card shrink-0">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate(-1)}>
+              <ArrowLeft size={16} />
+            </Button>
+            <h2 className="text-xl font-bold truncate">{testCase.name}</h2>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setShowEditor(true)}>
+              <Pencil size={12} className="mr-1" /> Edit
+            </Button>
+            <Button size="sm" className="h-7 text-xs bg-opensearch-blue hover:bg-blue-600" onClick={() => setRunningTestCase(testCase)}>
+              <Play size={12} className="mr-1" /> Run Test
+            </Button>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap ml-10">
+          <Badge className="text-[10px] px-2 py-0.5 bg-muted text-muted-foreground border-border font-medium uppercase tracking-widest rounded shrink-0">
+            Test Case
+          </Badge>
+          {testCase.labels?.length > 0 && testCase.labels.slice(0, 3).map(l => (
+            <Badge key={l} variant="outline" className={`text-[9px] px-1.5 py-0 ${getLabelColor(l)}`}>{l}</Badge>
+          ))}
+          <span className="flex items-center gap-1"><Calendar size={11} /> {formatDate(testCase.createdAt)}</span>
+          <span className="text-muted-foreground/30">·</span>
+          <span>{totalRuns} run{totalRuns !== 1 ? 's' : ''}</span>
+          <span className="text-muted-foreground/30">·</span>
+          <span className="flex items-center gap-1.5">
+            <span className="text-green-500 font-medium">{passCount}✓</span>
+            <span className="text-red-500 font-medium">{failCount}✗</span>
+          </span>
+          <span className="text-muted-foreground/30">·</span>
+          <span className={`font-medium ${passRate >= 80 ? 'text-green-500' : passRate >= 50 ? 'text-amber-500' : 'text-red-500'}`}>
+            {passRate}% pass rate
+          </span>
         </div>
       </div>
 
-      {/* ── Entity Card ────────────────────────────────────────────── */}
-      <div className="rounded-lg border border-border bg-card overflow-hidden mb-6">
-        <div className="flex">
-          {/* Colored left accent bar */}
-          <div className="w-1.5 bg-blue-500 shrink-0" />
-          <div className="flex-1 p-4">
-            <div className="flex items-start justify-between">
-              <div className="flex-1 min-w-0">
-                {/* Type badge + name */}
-                <div className="flex items-center gap-2 mb-2">
-                  <Badge className="text-[10px] px-2 py-0.5 bg-muted text-muted-foreground border-border font-medium uppercase tracking-widest rounded">
-                    Test Case
-                  </Badge>
-                  <span className="text-[10px] text-muted-foreground">v{testCase.currentVersion}</span>
+      {/* ── Main Content: Left Panel + Right Panel ─────────────────── */}
+      <ResizablePanelGroup direction="horizontal" className="flex-1">
+        {/* ── Left Panel ──────────────────────────────────────────── */}
+        <ResizablePanel defaultSize={30} minSize={20} maxSize={45} className="border-r">
+          <ScrollArea className="h-full">
+            {/* ── Collapsible Definition ──────────────────────────── */}
+            <div className="border-b">
+              <button
+                onClick={() => setDefinitionOpen(!definitionOpen)}
+                className="w-full flex items-center justify-between px-3 py-2 hover:bg-muted/30 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  {definitionOpen ? <ChevronDown size={12} className="text-muted-foreground" /> : <ChevronRight size={12} className="text-muted-foreground" />}
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Definition</span>
                 </div>
-                <h1 className="text-xl font-bold mb-2">{testCase.name}</h1>
-                {testCase.description && (
-                  <p className="text-sm text-muted-foreground mb-3">{testCase.description}</p>
-                )}
-                {/* Labels */}
-                {testCase.labels?.length > 0 && (
-                  <div className="flex items-center gap-1.5 flex-wrap mb-3">
-                    {testCase.labels.map(label => (
-                      <Badge key={label} variant="outline" className={`text-[10px] ${getLabelColor(label)}`}>{label}</Badge>
-                    ))}
-                  </div>
-                )}
-                {/* Metadata row */}
-                <div className="flex items-center gap-4 text-[11px] text-muted-foreground">
-                  <span className="flex items-center gap-1"><Calendar size={11} /> Created {formatDate(testCase.createdAt)}</span>
-                  <span className="flex items-center gap-1"><Play size={11} /> {totalRuns} run{totalRuns !== 1 ? 's' : ''}</span>
-                  {testCase.context?.length > 0 && <span>{testCase.context.length} context item{testCase.context.length !== 1 ? 's' : ''}</span>}
-                  {testCase.tools?.length ? <span>{testCase.tools.length} tool{testCase.tools.length !== 1 ? 's' : ''}</span> : null}
+                <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                  {testCase.expectedOutcomes?.length > 0 && (
+                    <span className="flex items-center gap-0.5"><Target size={9} /> {testCase.expectedOutcomes.length} expected</span>
+                  )}
+                  {testCase.context?.length > 0 && (
+                    <span>{testCase.context.length} context</span>
+                  )}
                 </div>
-              </div>
-              {/* Quick stats */}
-              <div className="flex items-center gap-4 ml-4 shrink-0">
-                <div className="text-center">
-                  <div className="text-lg font-bold text-green-500">{passCount}</div>
-                  <div className="text-[10px] text-muted-foreground">Passed</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-lg font-bold text-red-500">{failCount}</div>
-                  <div className="text-[10px] text-muted-foreground">Failed</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-lg font-bold">{passRate}%</div>
-                  <div className="text-[10px] text-muted-foreground">Pass Rate</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Collapsible Definition ─────────────────────────────────── */}
-      <div className="mb-6">
-        <button
-          onClick={() => setDefinitionOpen(!definitionOpen)}
-          className="flex items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors mb-2"
-        >
-          {definitionOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          <span className="uppercase tracking-wider">Definition</span>
-        </button>
-        {definitionOpen && (
-          <div className="space-y-4 pl-5 border-l-2 border-border ml-1">
-            {/* Prompt */}
-            <div>
-              <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Prompt</h4>
-              <div className="bg-muted/30 rounded-md p-3 text-sm whitespace-pre-wrap border border-border">
-                {testCase.initialPrompt}
-              </div>
-            </div>
-            {/* Expected Outcomes */}
-            {testCase.expectedOutcomes?.length > 0 && (
-              <div>
-                <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Expected Outcomes</h4>
-                <ul className="space-y-1">
-                  {testCase.expectedOutcomes.map((o, i) => (
-                    <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
-                      <CheckCircle2 size={12} className="text-green-500 mt-0.5 shrink-0" />
-                      <span>{o}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {/* Context */}
-            {testCase.context?.length > 0 && (
-              <div>
-                <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Context ({testCase.context.length})</h4>
-                <div className="space-y-2">
-                  {testCase.context.map((ctx, i) => (
-                    <div key={i} className="bg-muted/30 rounded-md p-2 border border-border">
-                      <p className="text-[10px] font-medium text-muted-foreground mb-1">{ctx.description}</p>
-                      <pre className="text-xs overflow-x-auto max-h-16 overflow-y-auto">{ctx.value.slice(0, 200)}{ctx.value.length > 200 ? '…' : ''}</pre>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {/* Tools */}
-            {testCase.tools?.length > 0 && (
-              <div>
-                <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Tools</h4>
-                <div className="flex flex-wrap gap-1">
-                  {testCase.tools.map((tool, i) => (
-                    <Badge key={i} variant="secondary" className="text-xs">{tool.name}</Badge>
-                  ))}
-                </div>
-              </div>
-            )}
-            {/* Expected PPL */}
-            {testCase.expectedPPL && (
-              <div>
-                <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Expected PPL</h4>
-                <pre className="bg-muted/30 rounded-md p-2 text-xs overflow-x-auto border border-border">{testCase.expectedPPL}</pre>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-
-      {/* ── Runs Timeline ──────────────────────────────────────────── */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-            Runs ({filteredRuns.length})
-          </h3>
-          <select
-            value={timeRange}
-            onChange={e => setTimeRange(e.target.value as TimeRange)}
-            className="text-xs px-2 py-1.5 bg-background border border-border rounded-md"
-          >
-            {TIME_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        </div>
-
-        {/* Delete feedback */}
-        {deleteState.message && (
-          <div className={`flex items-center gap-2 text-sm mb-3 p-3 rounded-lg ${
-            deleteState.status === 'success'
-              ? 'bg-green-100 text-green-700 border border-green-300 dark:bg-green-500/10 dark:text-green-400 dark:border-green-500/20'
-              : 'bg-red-100 text-red-700 border border-red-300 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20'
-          }`}>
-            {deleteState.status === 'success' ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
-            <span>{deleteState.message}</span>
-            {deleteState.status === 'error' && (
-              <Button variant="ghost" size="sm" onClick={() => setDeleteState(s => ({ ...s, status: 'idle', message: '' }))} className="ml-auto h-6 px-2">
-                <X size={14} />
-              </Button>
-            )}
-          </div>
-        )}
-
-        {filteredRuns.length === 0 ? (
-          <Card className="border-dashed">
-            <CardContent className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-              <FileText size={40} className="mb-3 opacity-20" />
-              <p className="text-sm font-medium">
-                {timeRange === 'all' ? 'No runs yet' : `No runs in ${TIME_OPTIONS.find(o => o.value === timeRange)?.label}`}
-              </p>
-              <p className="text-xs mb-3">Run this test case to see results</p>
-              <Button size="sm" onClick={() => setRunningTestCase(testCase)} className="bg-opensearch-blue hover:bg-blue-600">
-                <Play size={14} className="mr-1" /> Run Test
-              </Button>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="border border-border rounded-lg overflow-hidden">
-            {/* Column headers */}
-            <div className="flex items-center gap-2 px-3 py-2 bg-muted/30 border-b border-border text-[10px] uppercase tracking-wider text-muted-foreground font-medium">
-              <span className="w-8 shrink-0" />
-              <span className="w-20 shrink-0">Result</span>
-              <span className="flex-1 min-w-0">Details</span>
-              <span className="w-20 shrink-0 text-right">Accuracy</span>
-              <span className="w-20 shrink-0 text-right">Faithfulness</span>
-              <span className="w-8 shrink-0" />
-            </div>
-            {filteredRuns.map((run, index) => {
-              const isPassed = run.passFailStatus === 'passed';
-              const isLatest = index === 0;
-              const modelName = DEFAULT_CONFIG.models[run.modelName]?.display_name || run.modelName;
-              return (
-                <div
-                  key={run.id}
-                  className="group flex items-center gap-2 px-3 py-3 border-b border-border/40 hover:bg-muted/20 cursor-pointer transition-colors"
-                  onClick={() => handleRunClick(run)}
-                >
-                  {/* Status icon */}
-                  <div className="w-8 shrink-0 flex justify-center">
-                    <div className={`p-1 rounded-full ${isPassed ? 'bg-green-100 dark:bg-green-500/15' : 'bg-red-100 dark:bg-red-500/15'}`}>
-                      {isPassed
-                        ? <CheckCircle2 size={14} className="text-green-500" />
-                        : <XCircle size={14} className="text-red-500" />}
+              </button>
+              {definitionOpen && (
+                <div className="px-3 pb-3 space-y-2.5">
+                  {/* Input prompt */}
+                  <div>
+                    <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">Input</div>
+                    <div className="text-[10px] bg-muted/40 rounded px-2 py-1.5 border border-border max-h-20 overflow-y-auto break-words leading-relaxed">
+                      {testCase.initialPrompt || '—'}
                     </div>
                   </div>
-                  {/* Result label */}
-                  <div className="w-20 shrink-0">
-                    <span className={`text-xs font-semibold ${isPassed ? 'text-green-500' : 'text-red-500'}`}>
-                      {isPassed ? 'PASSED' : 'FAILED'}
-                    </span>
-                    {isLatest && (
-                      <Badge variant="outline" className="ml-1 text-[9px] px-1 py-0 bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30">
-                        Latest
-                      </Badge>
-                    )}
-                  </div>
-                  {/* Details */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-                      <span className="flex items-center gap-1"><Calendar size={11} />{formatRelativeTime(run.timestamp)}</span>
-                      <span>Model: {modelName}</span>
-                      <span>Agent: {run.agentName}</span>
+                  {/* Expected outcomes */}
+                  {testCase.expectedOutcomes?.length > 0 && (
+                    <div>
+                      <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">Expected</div>
+                      <ul className="space-y-0.5">
+                        {testCase.expectedOutcomes.map((o, i) => (
+                          <li key={i} className="text-[10px] text-muted-foreground flex items-start gap-1 leading-snug">
+                            <CheckCircle2 size={9} className="text-green-500 mt-0.5 shrink-0" />
+                            <span className="break-words min-w-0">{o}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                  </div>
-                  {/* Accuracy */}
-                  <div className="w-20 shrink-0 text-right">
-                    <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">{run.metrics.accuracy}%</span>
-                  </div>
-                  {/* Faithfulness */}
-                  <div className="w-20 shrink-0 text-right">
-                    <span className="text-sm font-semibold text-blue-500 dark:text-blue-300">{run.metrics.faithfulness ?? '—'}%</span>
-                  </div>
-                  {/* Delete */}
-                  <div className="w-8 shrink-0 flex justify-center">
-                    <Button
-                      variant="ghost" size="icon"
-                      onClick={e => { e.stopPropagation(); handleDeleteRun(run); }}
-                      disabled={deleteState.isDeleting && deleteState.deletingId === run.id}
-                      className="h-6 w-6 opacity-0 group-hover:opacity-100 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-500/10"
+                  )}
+                  {/* Context */}
+                  {testCase.context?.length > 0 && (
+                    <div>
+                      <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">Context ({testCase.context.length})</div>
+                      <div className="space-y-1">
+                        {testCase.context.map((ctx, i) => (
+                          <div key={i} className="bg-muted/30 rounded px-2 py-1 border border-border">
+                            <p className="text-[9px] font-medium text-muted-foreground">{ctx.description}</p>
+                            <pre className="text-[9px] overflow-x-auto max-h-12 overflow-y-auto">{ctx.value.slice(0, 150)}{ctx.value.length > 150 ? '…' : ''}</pre>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* ── Runs List ───────────────────────────────────────── */}
+            <div className="px-3 pt-2 pb-1 border-b flex items-center justify-between">
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Test Case Runs ({filteredRuns.length})</span>
+              <select
+                value={timeRange}
+                onChange={e => setTimeRange(e.target.value as TimeRange)}
+                className="text-[10px] px-1.5 py-0.5 bg-background border border-border rounded"
+              >
+                {TIME_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            <div className="p-2 space-y-0.5">
+              {filteredRuns.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+                  <FileText size={24} className="mb-2 opacity-20" />
+                  <p className="text-[10px]">No runs yet</p>
+                </div>
+              ) : (
+                filteredRuns.map((run, index) => {
+                  const isPassed = run.passFailStatus === 'passed';
+                  const isSelected = run.id === selectedRunId;
+                  const isLatest = index === 0;
+                  return (
+                    <div
+                      key={run.id}
+                      className={`flex items-center gap-2 px-2.5 py-2 rounded-md cursor-pointer transition-colors ${
+                        isSelected ? 'bg-primary/10 border border-primary/30' : 'hover:bg-muted/50 border border-transparent'
+                      }`}
+                      onClick={() => setSelectedRunId(run.id)}
                     >
-                      {deleteState.isDeleting && deleteState.deletingId === run.id
-                        ? <Loader2 size={12} className="animate-spin" />
-                        : <Trash2 size={12} />}
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                      <div className="shrink-0">
+                        {isPassed
+                          ? <CheckCircle2 size={14} className="text-green-500" />
+                          : <XCircle size={14} className="text-red-500" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-xs font-semibold ${isPassed ? 'text-green-500' : 'text-red-500'}`}>
+                            {isPassed ? 'PASSED' : 'FAILED'}
+                          </span>
+                          {isLatest && (
+                            <Badge variant="outline" className="text-[8px] px-1 py-0 bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30">
+                              Latest
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground flex items-center gap-1.5 mt-0.5">
+                          <span className="font-mono">{run.id.slice(0, 12)}</span>
+                          <span>·</span>
+                          <span>{formatRelativeTime(run.timestamp)}</span>
+                          <span>·</span>
+                          <span>{getModelName(run.modelName)}</span>
+                        </div>
+                      </div>
+                      <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 shrink-0">
+                        {run.metrics?.accuracy ?? '—'}%
+                      </span>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </ScrollArea>
+        </ResizablePanel>
 
-        {/* Load more */}
-        {runs.length < totalRuns && !isLoadingMore && (
-          <div className="flex justify-center pt-4">
-            <Button variant="outline" size="sm" onClick={loadMore}>Load More</Button>
-          </div>
-        )}
-        {isLoadingMore && (
-          <div className="flex justify-center pt-4">
-            <Loader2 size={16} className="animate-spin text-muted-foreground" />
-          </div>
-        )}
-      </div>
+        <ResizableHandle withHandle />
+
+        {/* ── Right Panel: Test Case Inspector ────────────────────── */}
+        <ResizablePanel defaultSize={70} minSize={50}>
+          {selectedRun ? (
+            <TestCaseInspectorPanel
+              report={selectedRun}
+              testCase={testCase}
+              status={getStatus(selectedRun)}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full text-muted-foreground">
+              <div className="text-center">
+                <FileText size={32} className="mx-auto mb-3 opacity-20" />
+                <p className="text-sm">Select a run to inspect</p>
+              </div>
+            </div>
+          )}
+        </ResizablePanel>
+      </ResizablePanelGroup>
 
       {/* ── Modals ─────────────────────────────────────────────────── */}
       {runningTestCase && (
@@ -435,15 +323,6 @@ export const TestCaseDetailPage: React.FC = () => {
             <TestCaseEditor testCase={testCase} onSave={async () => { setShowEditor(false); loadData(); }} onCancel={() => setShowEditor(false)} />
           </div>
         </div>
-      )}
-
-      {/* ── Run Details Flyout ─────────────────────────────────────── */}
-      {flyoutReport && (
-        <RunDetailsFlyout
-          report={flyoutReport}
-          testCase={testCase}
-          onClose={() => setFlyoutReport(null)}
-        />
       )}
     </div>
   );

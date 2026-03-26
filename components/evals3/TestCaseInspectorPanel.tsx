@@ -57,7 +57,7 @@ export const TestCaseInspectorPanel: React.FC<TestCaseInspectorPanelProps> = ({
 
         <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">
           <Badge className="text-[10px] px-2 py-0.5 bg-muted text-muted-foreground border-border font-medium uppercase tracking-widest rounded shrink-0">
-            Test Case Result
+            Test Case Run
           </Badge>
           {accuracy != null && (
             <span className="flex items-center gap-1">
