@@ -65,7 +65,7 @@ function PassFailBadge({ result }: { result: 'pass' | 'fail' | 'running' | 'unkn
   return <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-medium border ${c.cls}`}>{c.icon} {c.label}</span>;
 }
 
-type SortField = 'name' | 'lastRun' | 'runs';
+type SortField = 'name' | 'lastRun' | 'runs' | 'passRate';
 type SortDir = 'asc' | 'desc';
 
 function SortHeader({ label, active, dir, onClick, className }: {
@@ -149,11 +149,30 @@ export const TestCasesPage4: React.FC = () => {
     return map;
   }, [benchmarks]);
 
-  // Latest run by TC (from all runs)
+  // Latest run by TC (from all runs) — includes status and ID for the Last Run column
   const latestRunByTc = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const run of allRuns) { const tcId = (run as any).testCaseId; if (tcId && (!map[tcId] || new Date(run.timestamp) > new Date(map[tcId]))) map[tcId] = run.timestamp; }
+    const map: Record<string, { timestamp: string; passed: boolean | null; id: string }> = {};
+    for (const run of allRuns) {
+      const tcId = (run as any).testCaseId;
+      if (tcId && (!map[tcId] || new Date(run.timestamp) > new Date(map[tcId].timestamp))) {
+        const passed = run.passFailStatus === 'passed' ? true : run.passFailStatus === 'failed' ? false : null;
+        map[tcId] = { timestamp: run.timestamp, passed, id: run.id };
+      }
+    }
     return map;
+  }, [allRuns]);
+
+  // Pass rate per test case
+  const passRateByTc = useMemo(() => {
+    const counts: Record<string, { passed: number; total: number }> = {};
+    for (const run of allRuns) {
+      const tcId = (run as any).testCaseId;
+      if (!tcId) continue;
+      if (!counts[tcId]) counts[tcId] = { passed: 0, total: 0 };
+      counts[tcId].total++;
+      if (run.passFailStatus === 'passed') counts[tcId].passed++;
+    }
+    return counts;
   }, [allRuns]);
 
   // Filtered test cases
@@ -170,15 +189,20 @@ export const TestCasesPage4: React.FC = () => {
     return [...tcs].sort((a, b) => {
       switch (sort.field) {
         case 'lastRun': {
-          const aRun = latestRunByTc[a.id] || '';
-          const bRun = latestRunByTc[b.id] || '';
+          const aRun = latestRunByTc[a.id]?.timestamp || '';
+          const bRun = latestRunByTc[b.id]?.timestamp || '';
           return dir * aRun.localeCompare(bRun);
         }
         case 'runs': return dir * ((runCounts[a.id] || 0) - (runCounts[b.id] || 0));
+        case 'passRate': {
+          const aRate = passRateByTc[a.id]?.total ? passRateByTc[a.id].passed / passRateByTc[a.id].total : -1;
+          const bRate = passRateByTc[b.id]?.total ? passRateByTc[b.id].passed / passRateByTc[b.id].total : -1;
+          return dir * (aRate - bRate);
+        }
         default: return 0;
       }
     });
-  }, [sort, latestRunByTc, runCounts]);
+  }, [sort, latestRunByTc, runCounts, passRateByTc]);
 
   // For flat view: sort all test cases by the active sort field
   const sortedTcs = useMemo(() => {
@@ -187,15 +211,20 @@ export const TestCasesPage4: React.FC = () => {
       switch (sort.field) {
         case 'name': return dir * (a.name || '').localeCompare(b.name || '');
         case 'lastRun': {
-          const aRun = latestRunByTc[a.id] || '';
-          const bRun = latestRunByTc[b.id] || '';
+          const aRun = latestRunByTc[a.id]?.timestamp || '';
+          const bRun = latestRunByTc[b.id]?.timestamp || '';
           return dir * aRun.localeCompare(bRun);
         }
         case 'runs': return dir * ((runCounts[a.id] || 0) - (runCounts[b.id] || 0));
+        case 'passRate': {
+          const aRate = passRateByTc[a.id]?.total ? passRateByTc[a.id].passed / passRateByTc[a.id].total : -1;
+          const bRate = passRateByTc[b.id]?.total ? passRateByTc[b.id].passed / passRateByTc[b.id].total : -1;
+          return dir * (aRate - bRate);
+        }
         default: return 0;
       }
     });
-  }, [filteredTcs, sort, latestRunByTc, runCounts]);
+  }, [filteredTcs, sort, latestRunByTc, runCounts, passRateByTc]);
 
   const handleSort = (field: SortField) => {
     setSort(prev => prev.field === field ? { field, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { field, dir: 'asc' });
@@ -276,17 +305,25 @@ export const TestCasesPage4: React.FC = () => {
   // Render a test case row (shared between grouped and flat)
   const renderTcRow = (tc: TestCase, indent: boolean = false) => {
     const lastRun = latestRunByTc[tc.id];
-    const count = runCounts[tc.id] || 0;
+    const pr = passRateByTc[tc.id];
+    const passRate = pr && pr.total > 0 ? Math.round((pr.passed / pr.total) * 100) : null;
     const bmList = tcBenchmarkMap.get(tc.id) || [];
     return (
       <tr key={tc.id} className="border-b hover:bg-muted/50 cursor-pointer transition-colors"
         onClick={() => navigate(`/evals3/test-cases/${tc.id}`)}>
+        {/* Name + category badge + labels */}
         <td className={`px-3 py-2.5 align-middle ${indent ? 'pl-8' : ''}`}>
-          <div className="text-sm font-medium truncate max-w-[280px]">{tc.name}</div>
+          <div className="text-sm font-medium truncate max-w-[260px]">{tc.name}</div>
           <div className="flex items-center gap-1 mt-0.5">
+            {tc.category && <Badge variant="outline" className="text-[9px] px-1 py-0">{tc.category}</Badge>}
             {tc.labels?.slice(0, 2).map(l => <Badge key={l} variant="outline" className="text-[10px] px-1 py-0">{l}</Badge>)}
           </div>
         </td>
+        {/* Description */}
+        <td className="px-3 py-2.5 align-middle text-[11px] text-muted-foreground truncate max-w-[200px]">
+          {tc.description || '—'}
+        </td>
+        {/* Benchmarks */}
         <td className="px-3 py-2.5 align-middle relative">
           {bmList.length > 0 ? (
             <button className="text-[10px] text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 transition-colors"
@@ -305,10 +342,27 @@ export const TestCasesPage4: React.FC = () => {
             </div>
           )}
         </td>
-        <td className="px-3 py-2.5 align-middle text-[11px] text-muted-foreground truncate max-w-[200px]">{truncate(tc.initialPrompt, 50)}</td>
-        <td className="px-3 py-2.5 align-middle text-[11px] text-muted-foreground whitespace-nowrap">{lastRun ? formatRelativeTime(lastRun) : '—'}</td>
+        {/* Pass Rate */}
         <td className="px-3 py-2.5 align-middle text-right">
-          {count > 0 ? <Badge variant="outline" className="text-[10px]">{count}</Badge> : <span className="text-[11px] text-muted-foreground">—</span>}
+          {passRate !== null ? (
+            <span className={`text-xs font-semibold tabular-nums ${passRate >= 80 ? 'text-green-500' : passRate >= 50 ? 'text-amber-600 dark:text-amber-400' : 'text-red-500'}`}>
+              {passRate}%
+            </span>
+          ) : <span className="text-[11px] text-muted-foreground">—</span>}
+        </td>
+        {/* Last Run — ✓/✗ + relative time as clickable link */}
+        <td className="px-3 py-2.5 align-middle">
+          {lastRun ? (
+            <button
+              className="inline-flex items-center gap-1.5 text-[11px] text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline transition-colors"
+              onClick={e => { e.stopPropagation(); navigate(`/runs/${lastRun.id}`); }}
+            >
+              {lastRun.passed === true && <CheckCircle2 size={11} className="text-green-500 shrink-0" />}
+              {lastRun.passed === false && <XCircle size={11} className="text-red-500 shrink-0" />}
+              {lastRun.passed === null && <Clock size={11} className="text-muted-foreground shrink-0" />}
+              {formatRelativeTime(lastRun.timestamp)}
+            </button>
+          ) : <span className="text-[11px] text-muted-foreground">—</span>}
         </td>
       </tr>
     );
@@ -395,10 +449,10 @@ export const TestCasesPage4: React.FC = () => {
               <thead className={`sticky top-0 z-10 bg-background transition-shadow duration-200 ${isScrolled ? 'shadow-sm' : ''}`}>
                 <tr className="border-b">
                   <SortHeader label="Name" active={sort.field === 'name'} dir={sort.dir} onClick={() => handleSort('name')} />
+                  <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b whitespace-nowrap">Description</th>
                   <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b whitespace-nowrap"></th>
-                  <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b whitespace-nowrap">Input Prompt</th>
+                  <SortHeader label="Pass Rate" active={sort.field === 'passRate'} dir={sort.dir} onClick={() => handleSort('passRate')} className="text-right" />
                   <SortHeader label="Last Run" active={sort.field === 'lastRun'} dir={sort.dir} onClick={() => handleSort('lastRun')} />
-                  <SortHeader label="Runs" active={sort.field === 'runs'} dir={sort.dir} onClick={() => handleSort('runs')} className="text-right" />
                 </tr>
               </thead>
               <tbody className="[&_tr:last-child]:border-0">
