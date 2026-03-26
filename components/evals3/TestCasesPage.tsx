@@ -67,7 +67,7 @@ function PassFailBadge({ result }: { result: 'pass' | 'fail' | 'running' | 'unkn
   return <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[11px] font-medium border ${c.cls}`}>{c.icon} {c.label}</span>;
 }
 
-type SortField = 'name' | 'lastRun' | 'runs' | 'passRate';
+type SortField = 'name' | 'created' | 'lastRun' | 'runs' | 'passRate';
 type SortDir = 'asc' | 'desc';
 
 function SortHeader({ label, active, dir, onClick, className }: {
@@ -90,8 +90,7 @@ export const TestCasesPage4: React.FC = () => {
   const [runCounts, setRunCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [activeTab, setActiveTab] = useState<string>('test-cases');
-  const [viewMode, setViewMode] = useState<'flat' | 'grouped'>('grouped');
+  const [viewMode, setViewMode] = useState<'flat' | 'grouped'>('flat');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [timeRange, setTimeRange] = useState<TimeRange>('7d');
   const [openPopoverId, setOpenPopoverId] = useState<string | null>(null);
@@ -106,7 +105,7 @@ export const TestCasesPage4: React.FC = () => {
   const [runningTestCase, setRunningTestCase] = useState<TestCase | null>(null);
 
   // Sort
-  const [sort, setSort] = useState<{ field: SortField; dir: SortDir }>({ field: 'name', dir: 'asc' });
+  const [sort, setSort] = useState<{ field: SortField; dir: SortDir }>({ field: 'created', dir: 'desc' });
 
   // Runs tab — deferred
   const [allRuns, setAllRuns] = useState<TestCaseRun[]>([]);
@@ -131,7 +130,6 @@ export const TestCasesPage4: React.FC = () => {
   }, []);
 
   useEffect(() => { loadDefinitions(); }, [loadDefinitions]);
-  useEffect(() => { if (activeTab === 'runs' && !runsLoadedRef.current && !runsLoading) loadRuns(); }, [activeTab, loadRuns, runsLoading]);
 
   // Scroll shadow
   useEffect(() => {
@@ -213,6 +211,7 @@ export const TestCasesPage4: React.FC = () => {
     return [...filteredTcs].sort((a, b) => {
       switch (sort.field) {
         case 'name': return dir * (a.name || '').localeCompare(b.name || '');
+        case 'created': return dir * (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
         case 'lastRun': {
           const aRun = latestRunByTc[a.id]?.timestamp || '';
           const bRun = latestRunByTc[b.id]?.timestamp || '';
@@ -369,7 +368,7 @@ export const TestCasesPage4: React.FC = () => {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-xl font-bold">Test Cases</h2>
-          <p className="text-[11px] text-muted-foreground mt-0.5">Define prompts and expected outcomes to evaluate agent behavior</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">{testCases.length} test case{testCases.length !== 1 ? 's' : ''} · Define prompts and expected outcomes to evaluate agent behavior</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="w-[200px] relative">
@@ -396,150 +395,86 @@ export const TestCasesPage4: React.FC = () => {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between mb-3">
-          <TabsList>
-            <TabsTrigger value="test-cases" className="text-xs">Test Cases</TabsTrigger>
-            <TabsTrigger value="runs" className="text-xs">Runs</TabsTrigger>
-          </TabsList>
-          {activeTab === 'test-cases' && (
-            <div className="flex items-center gap-2">
-              {/* Expand/Collapse All — only in grouped mode */}
-              {viewMode === 'grouped' && (
-                <div className="flex items-center gap-0.5">
-                  <button
-                    onClick={() => setCollapsedGroups(new Set())}
-                    className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                    title="Expand all"
-                  >
-                    <ChevronsUpDown size={14} />
-                  </button>
-                  <button
-                    onClick={() => setCollapsedGroups(new Set(groupedData.map(g => g.id)))}
-                    className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                    title="Collapse all"
-                  >
-                    <ChevronsDownUp size={14} />
-                  </button>
-                </div>
-              )}
-              {/* View mode toggle */}
-              <div className="flex items-center border border-border rounded-md overflow-hidden">
-                <button onClick={() => setViewMode('grouped')} className={`px-2 py-1 text-xs flex items-center gap-1 transition-colors ${viewMode === 'grouped' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
-                  <Layers size={12} /> Grouped
-                </button>
-                <button onClick={() => setViewMode('flat')} className={`px-2 py-1 text-xs flex items-center gap-1 transition-colors ${viewMode === 'flat' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
-                  <List size={12} /> Flat
-                </button>
-              </div>
+      {/* ── View Toggle ──────────────────────────────────────────── */}
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          {/* Expand/Collapse All — only in grouped mode */}
+          {viewMode === 'grouped' && (
+            <div className="flex items-center gap-0.5">
+              <button
+                onClick={() => setCollapsedGroups(new Set())}
+                className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                title="Expand all"
+              >
+                <ChevronsUpDown size={14} />
+              </button>
+              <button
+                onClick={() => setCollapsedGroups(new Set(groupedData.map(g => g.id)))}
+                className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                title="Collapse all"
+              >
+                <ChevronsDownUp size={14} />
+              </button>
             </div>
           )}
-        </div>
-
-
-        {/* ── Tab 1: Test Cases ──────────────────────────────────────── */}
-        <TabsContent value="test-cases" className="flex-1 overflow-hidden mt-0">
-          <div ref={scrollRef} className="h-full overflow-y-auto rounded-lg border border-border">
-            <table className="w-full caption-bottom text-sm">
-              <thead className={`sticky top-0 z-10 bg-background transition-shadow duration-200 ${isScrolled ? 'shadow-sm' : ''}`}>
-                <tr className="border-b">
-                  <SortHeader label="Name" active={sort.field === 'name'} dir={sort.dir} onClick={() => handleSort('name')} />
-                  <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b whitespace-nowrap">Description</th>
-                  <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b whitespace-nowrap"></th>
-                  <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b whitespace-nowrap">Created</th>
-                  <th className="h-8 px-3 text-right align-middle font-medium text-xs text-muted-foreground bg-background border-b whitespace-nowrap">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="[&_tr:last-child]:border-0">
-                {viewMode === 'grouped' ? (
-                  groupedData.length === 0 ? (
-                    <tr><td colSpan={5} className="py-16 text-center text-sm text-muted-foreground">No test cases found</td></tr>
-                  ) : (
-                    groupedData.map(group => {
-                      const isCollapsed = collapsedGroups.has(group.id);
-                      const isUnassigned = group.id === '__unassigned__';
-                      return (
-                        <React.Fragment key={group.id}>
-                          {/* Group header */}
-                          <tr className={`border-b cursor-pointer hover:bg-muted/30 transition-colors ${isUnassigned ? 'bg-muted/10' : 'bg-purple-50 dark:bg-purple-500/5'}`}
-                            onClick={() => toggleGroup(group.id)}>
-                            <td colSpan={5} className="px-3 py-2 align-middle">
-                              <div className="flex items-center gap-2">
-                                <span className="text-muted-foreground">{isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}</span>
-                                {!isUnassigned && <Badge className="text-[9px] px-1 py-0 bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-500/15 dark:text-purple-400 dark:border-purple-500/30 font-semibold uppercase tracking-wider">Benchmark</Badge>}
-                                <span className="text-xs font-semibold">{group.name}</span>
-                                <span className="text-[10px] text-muted-foreground">({group.testCases.length} test case{group.testCases.length !== 1 ? 's' : ''})</span>
-                              </div>
-                            </td>
-                          </tr>
-                          {!isCollapsed && group.testCases.map(tc => renderTcRow(tc, true))}
-                        </React.Fragment>
-                      );
-                    })
-                  )
-                ) : (
-                  sortedTcs.length === 0 ? (
-                    <tr><td colSpan={5} className="py-16 text-center text-sm text-muted-foreground">No test cases found</td></tr>
-                  ) : sortedTcs.map(tc => renderTcRow(tc, false))
-                )}
-              </tbody>
-            </table>
+          {/* View mode toggle */}
+          <div className="flex items-center border border-border rounded-md overflow-hidden">
+            <button onClick={() => setViewMode('flat')} className={`px-2 py-1 text-xs flex items-center gap-1 transition-colors ${viewMode === 'flat' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+              <List size={12} /> Flat
+            </button>
+            <button onClick={() => setViewMode('grouped')} className={`px-2 py-1 text-xs flex items-center gap-1 transition-colors ${viewMode === 'grouped' ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+              <Layers size={12} /> Grouped
+            </button>
           </div>
-        </TabsContent>
+        </div>
+      </div>
 
-        {/* ── Tab 2: Runs ────────────────────────────────────────────── */}
-        <TabsContent value="runs" className="flex-1 overflow-hidden mt-0">
-          {runsLoading ? (
-            <div className="flex items-center justify-center py-16"><Loader2 size={20} className="animate-spin text-muted-foreground" /><span className="ml-2 text-xs text-muted-foreground">Loading runs...</span></div>
-          ) : (
-            <>
-              <div className="grid grid-cols-3 gap-3 mb-4">
-                <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
-                  <Activity size={16} className="text-purple-500" /><div><div className="text-lg font-semibold leading-tight">{totalRuns}</div><div className="text-[11px] text-muted-foreground">Total Runs</div></div>
-                </div>
-                <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
-                  <BarChart3 size={16} className="text-green-500" /><div><div className="text-lg font-semibold leading-tight">{passRate}%</div><div className="text-[11px] text-muted-foreground">Pass Rate</div></div>
-                </div>
-                <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
-                  <CheckCircle2 size={16} className="text-blue-500" /><div><div className="text-lg font-semibold leading-tight">{passCount} / {totalRuns}</div><div className="text-[11px] text-muted-foreground">Passed</div></div>
-                </div>
-              </div>
-              <div className="flex-1 overflow-y-auto rounded-lg border border-border">
-                <table className="w-full caption-bottom text-sm">
-                  <thead className="sticky top-0 z-10 bg-background">
-                    <tr className="border-b">
-                      <th className="h-8 w-6 px-2 align-middle bg-background border-b" />
-                      <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b">Test Case</th>
-                      <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b">Agent</th>
-                      <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b">Timestamp</th>
-                      <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b">Result</th>
-                    </tr>
-                  </thead>
-                  <tbody className="[&_tr:last-child]:border-0">
-                    {filteredRuns.length === 0 ? (
-                      <tr><td colSpan={5} className="py-16 text-center text-sm text-muted-foreground">{timeRange === 'all' ? 'No runs found' : `No runs in ${TIME_OPTIONS.find(o => o.value === timeRange)?.label}`}</td></tr>
-                    ) : filteredRuns.map(run => {
-                      const tc = tcMap.get((run as any).testCaseId);
-                      const result = getPassFail(run);
-                      const tcId = (run as any).testCaseId;
-                      return (
-                        <tr key={run.id} className="border-b hover:bg-muted/50 cursor-pointer transition-colors"
-                          onClick={() => tcId && navigate(`/evals3/test-cases/${tcId}`)}>
-                          <td className="px-2 py-2.5 align-middle text-center"><ChevronRight size={13} className="text-muted-foreground" /></td>
-                          <td className="px-3 py-2.5 align-middle"><div className="text-sm font-medium truncate max-w-[240px]">{tc?.name || tcId}</div></td>
-                          <td className="px-3 py-2.5 align-middle text-xs truncate max-w-[120px]">{run.agentName || '—'}</td>
-                          <td className="px-3 py-2.5 align-middle text-[11px] text-muted-foreground whitespace-nowrap">{formatRelativeTime(run.timestamp)}</td>
-                          <td className="px-3 py-2.5 align-middle"><PassFailBadge result={result} /></td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </TabsContent>
-      </Tabs>
+      {/* ── Table ──────────────────────────────────────────────────── */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto rounded-lg border border-border">
+        <table className="w-full caption-bottom text-sm">
+          <thead className={`sticky top-0 z-10 bg-background transition-shadow duration-200 ${isScrolled ? 'shadow-sm' : ''}`}>
+            <tr className="border-b">
+              <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b whitespace-nowrap">Name</th>
+              <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b whitespace-nowrap">Description</th>
+              <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b whitespace-nowrap"></th>
+              <SortHeader label="Created" active={sort.field === 'created'} dir={sort.dir} onClick={() => handleSort('created')} />
+              <th className="h-8 px-3 text-right align-middle font-medium text-xs text-muted-foreground bg-background border-b whitespace-nowrap">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="[&_tr:last-child]:border-0">
+            {viewMode === 'grouped' ? (
+              groupedData.length === 0 ? (
+                <tr><td colSpan={5} className="py-16 text-center text-sm text-muted-foreground">No test cases found</td></tr>
+              ) : (
+                groupedData.map(group => {
+                  const isCollapsed = collapsedGroups.has(group.id);
+                  const isUnassigned = group.id === '__unassigned__';
+                  return (
+                    <React.Fragment key={group.id}>
+                      <tr className={`border-b cursor-pointer hover:bg-muted/30 transition-colors ${isUnassigned ? 'bg-muted/10' : 'bg-purple-50 dark:bg-purple-500/5'}`}
+                        onClick={() => toggleGroup(group.id)}>
+                        <td colSpan={5} className="px-3 py-2 align-middle">
+                          <div className="flex items-center gap-2">
+                            <span className="text-muted-foreground">{isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}</span>
+                            {!isUnassigned && <Badge className="text-[9px] px-1 py-0 bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-500/15 dark:text-purple-400 dark:border-purple-500/30 font-semibold uppercase tracking-wider">Benchmark</Badge>}
+                            <span className="text-xs font-semibold">{group.name}</span>
+                            <span className="text-[10px] text-muted-foreground">({group.testCases.length} test case{group.testCases.length !== 1 ? 's' : ''})</span>
+                          </div>
+                        </td>
+                      </tr>
+                      {!isCollapsed && group.testCases.map(tc => renderTcRow(tc, true))}
+                    </React.Fragment>
+                  );
+                })
+              )
+            ) : (
+              sortedTcs.length === 0 ? (
+                <tr><td colSpan={5} className="py-16 text-center text-sm text-muted-foreground">No test cases found</td></tr>
+              ) : sortedTcs.map(tc => renderTcRow(tc, false))
+            )}
+          </tbody>
+        </table>
+      </div>
       {/* Editor Modal */}
       {showEditor && (
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm">
