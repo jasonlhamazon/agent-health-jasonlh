@@ -18,12 +18,6 @@ import { TestCaseRunsPage } from './components/TestCaseRunsPage';
 import { ComparisonPage } from './components/comparison/ComparisonPage';
 import { TracesPage } from './components/traces/TracesPage';
 import { AgentTracesPage } from './components/traces/AgentTracesPage';
-import { BenchmarksPage2 } from './components/BenchmarksPage2';
-import { BenchmarksPage3 } from './components/BenchmarksPage3';
-import { BenchmarkRunsPage2 } from './components/BenchmarkRunsPage2';
-import { TestCasesPage2 } from './components/TestCasesPage2';
-import { TestCasesPage3 } from './components/TestCasesPage3';
-import { TestCasesPage4 } from './components/TestCasesPage4';
 import { BenchmarksPage4 } from './components/BenchmarksPage4';
 import { BenchmarksPage4 as Evals3Benchmarks } from './components/evals3/BenchmarksPage';
 import { TestCasesPage4 as Evals3TestCases } from './components/evals3/TestCasesPage';
@@ -82,21 +76,6 @@ function App() {
 
           {/* Agent Traces - Table View */}
           <Route path="/agent-traces" element={<AgentTracesPage />} />
-
-          {/* Benchmark v2 Prototype */}
-          <Route path="/benchmarks2" element={<BenchmarksPage2 />} />
-
-          {/* Benchmark v3 — Runs-table-centric */}
-          <Route path="/benchmarks3" element={<BenchmarksPage3 />} />
-
-          {/* Benchmark v3 detail — Tabbed layout (runs + test cases) */}
-          <Route path="/benchmarks3/:benchmarkId/runs" element={<BenchmarkRunsPage2 />} />
-
-          {/* Test Cases v2 — Grouped Table */}
-          <Route path="/test-cases-v2" element={<TestCasesPage2 />} />
-
-          {/* Test Cases v3 — Tree-Table */}
-          <Route path="/test-cases-v3" element={<TestCasesPage3 />} />
 
           {/* Evals 3 → Evaluations */}
           <Route path="/evals3/benchmarks" element={<Evals3Benchmarks />} />

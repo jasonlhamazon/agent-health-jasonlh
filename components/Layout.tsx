@@ -66,11 +66,7 @@ const navItems = [
 
 const evalsSubItems = [
   { to: "/test-cases", label: "Test Cases", testId: "nav-test-cases" },
-  { to: "/test-cases-v2", label: "Test Cases v2", testId: "nav-test-cases-v2" },
-  { to: "/test-cases-v3", label: "Test Cases v3", testId: "nav-test-cases-v3" },
   { to: "/benchmarks", label: "Benchmarks", testId: "nav-benchmarks" },
-  { to: "/benchmarks2", label: "Benchmarks v2", testId: "nav-benchmarks2" },
-  { to: "/benchmarks3", label: "Benchmarks v3", testId: "nav-benchmarks3" },
 ];
 
 const evals3SubItems = [
