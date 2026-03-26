@@ -94,6 +94,7 @@ export const TestCasesPage4: React.FC = () => {
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [timeRange, setTimeRange] = useState<TimeRange>('7d');
   const [openPopoverId, setOpenPopoverId] = useState<string | null>(null);
+  const [selectedBenchmark, setSelectedBenchmark] = useState<string>('all');
   const [isScrolled, setIsScrolled] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -179,14 +180,23 @@ export const TestCasesPage4: React.FC = () => {
   // Filtered test cases
   const filteredTcs = useMemo(() => {
     let list = testCases;
-    if (search) { const q = search.toLowerCase(); list = list.filter(tc => tc.name.toLowerCase().includes(q) || tc.initialPrompt?.toLowerCase().includes(q)); }
+    if (search) { const q = search.toLowerCase(); list = list.filter(tc => tc.name.toLowerCase().includes(q) || tc.initialPrompt?.toLowerCase().includes(q) || tc.description?.toLowerCase().includes(q)); }
+    if (selectedBenchmark !== 'all') {
+      const bm = benchmarks.find(b => b.id === selectedBenchmark);
+      if (bm) {
+        const bmTcIds = new Set(bm.testCaseIds);
+        list = list.filter(tc => bmTcIds.has(tc.id));
+      }
+    }
     return list;
-  }, [testCases, search]);
+  }, [testCases, search, selectedBenchmark, benchmarks]);
 
   // Sort test cases within groups (lastRun, runs)
   const sortTcsWithinGroup = useCallback((tcs: TestCase[]): TestCase[] => {
-    if (sort.field === 'name') return tcs; // name sorts groups, not TCs within
     const dir = sort.dir === 'asc' ? 1 : -1;
+    if (sort.field === 'name') {
+      return [...tcs].sort((a, b) => dir * (a.name || '').localeCompare(b.name || ''));
+    }
     return [...tcs].sort((a, b) => {
       switch (sort.field) {
         case 'lastRun': {
@@ -375,12 +385,13 @@ export const TestCasesPage4: React.FC = () => {
             <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input placeholder="Search" value={search} onChange={e => setSearch(e.target.value)} className="pl-7 h-7 text-xs md:text-xs" />
           </div>
-          <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs font-normal">
-            <SlidersHorizontal size={12} /> Filter
-          </Button>
-          <Select value={timeRange} onValueChange={v => setTimeRange(v as TimeRange)}>
-            <SelectTrigger className="w-[85px] h-7 text-xs"><SelectValue /></SelectTrigger>
-            <SelectContent>{TIME_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}</SelectContent>
+          {/* Benchmark filter */}
+          <Select value={selectedBenchmark} onValueChange={setSelectedBenchmark}>
+            <SelectTrigger className="w-[160px] h-7 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Benchmarks</SelectItem>
+              {benchmarks.map(bm => <SelectItem key={bm.id} value={bm.id}>{bm.name}</SelectItem>)}
+            </SelectContent>
           </Select>
           <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleImportFile} />
           <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="h-7 gap-1.5 text-xs font-normal">
@@ -388,9 +399,6 @@ export const TestCasesPage4: React.FC = () => {
           </Button>
           <Button size="sm" onClick={() => { setEditingTestCase(null); setShowEditor(true); }} className="h-7 gap-1.5 text-xs">
             <Plus size={12} /> New Test Case
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => { loadDefinitions(); if (runsLoadedRef.current) loadRuns(); }} disabled={loading} className="h-7">
-            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
           </Button>
         </div>
       </div>
@@ -434,7 +442,13 @@ export const TestCasesPage4: React.FC = () => {
         <table className="w-full caption-bottom text-sm">
           <thead className={`sticky top-0 z-10 bg-background transition-shadow duration-200 ${isScrolled ? 'shadow-sm' : ''}`}>
             <tr className="border-b">
-              <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b whitespace-nowrap">Name</th>
+              <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b whitespace-nowrap cursor-pointer select-none hover:text-foreground transition-colors"
+                onClick={() => handleSort('name')}>
+                <span className="inline-flex items-center gap-1">
+                  Name
+                  {sort.field === 'name' && <ChevronDown size={10} className={sort.dir === 'asc' ? 'rotate-180' : ''} />}
+                </span>
+              </th>
               <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b whitespace-nowrap">Description</th>
               <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b whitespace-nowrap"></th>
               <SortHeader label="Created" active={sort.field === 'created'} dir={sort.dir} onClick={() => handleSort('created')} />

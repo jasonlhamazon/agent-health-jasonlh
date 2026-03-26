@@ -14,7 +14,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Play, CheckCircle2, XCircle, Loader2, Clock, Search, X, RefreshCw,
   Activity, BarChart3, Layers, TrendingUp, TrendingDown, Minus, AlertTriangle,
-  SlidersHorizontal, ChevronDown,
+  SlidersHorizontal, ChevronDown, Upload, Plus,
 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +25,8 @@ import { asyncBenchmarkStorage, asyncTestCaseStorage } from '@/services/storage'
 import { Benchmark, BenchmarkRun, TestCase } from '@/types';
 import { DEFAULT_CONFIG } from '@/lib/constants';
 import { formatRelativeTime, getModelName } from '@/lib/utils';
+import { BenchmarkEditor } from '../BenchmarkEditor';
+import { validateTestCasesArrayJson } from '@/lib/testCaseValidation';
 
 // ─── Time Filter ─────────────────────────────────────────────────────────────
 
@@ -133,6 +135,11 @@ export const BenchmarksPage4: React.FC = () => {
   const [selectedAgent, setSelectedAgent] = useState<string>('all');
   const [isScrolled, setIsScrolled] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Editor/Import state
+  const [showEditor, setShowEditor] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
 
   // Sort state for Benchmarks tab
   const [bmSort, setBmSort] = useState<{ field: BmSortField; dir: SortDir }>({ field: 'runs', dir: 'desc' });
@@ -303,6 +310,33 @@ export const BenchmarksPage4: React.FC = () => {
   const passedResults = allFlatResults.filter(r => r.passed === true).length;
   const resultsPassRate = totalResults > 0 ? Math.round((passedResults / totalResults) * 100) : 0;
 
+  // Import JSON handler
+  const handleImportFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setIsImporting(true);
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+      const validation = validateTestCasesArrayJson(json);
+      if (!validation.valid || !validation.data) return;
+      const result = await asyncTestCaseStorage.bulkCreate(validation.data);
+      if (result.created > 0) {
+        const allTcs = await asyncTestCaseStorage.getAll();
+        const createdIds = (allTcs as TestCase[]).filter(tc => validation.data!.some(d => d.name === tc.name)).map(tc => tc.id);
+        const bm = await asyncBenchmarkStorage.create({
+          name: file.name.replace(/\.json$/i, '') || 'Imported Benchmark',
+          description: `Auto-created from import of ${result.created} test case(s)`,
+          currentVersion: 1,
+          versions: [{ version: 1, createdAt: new Date().toISOString(), testCaseIds: createdIds }],
+          testCaseIds: createdIds, runs: [],
+        });
+        navigate(`/evals3/benchmarks/${bm.id}/runs`);
+      }
+    } catch (err) { console.error('Import failed:', err); }
+    finally { setIsImporting(false); event.target.value = ''; }
+  };
+
   if (loading) {
     return <div className="flex items-center justify-center h-full"><Loader2 size={24} className="animate-spin text-muted-foreground" /></div>;
   }
@@ -322,10 +356,6 @@ export const BenchmarksPage4: React.FC = () => {
             <Input placeholder="Search" value={search} onChange={e => setSearch(e.target.value)}
               className="pl-7 h-7 text-xs md:text-xs" />
           </div>
-          {/* Filter button (placeholder) */}
-          <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs font-normal">
-            <SlidersHorizontal size={12} /> Filter
-          </Button>
           {/* Agent filter */}
           <Select value={selectedAgent} onValueChange={setSelectedAgent}>
             <SelectTrigger className="w-[120px] h-7 text-xs"><SelectValue /></SelectTrigger>
@@ -340,6 +370,15 @@ export const BenchmarksPage4: React.FC = () => {
               {TIME_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
             </SelectContent>
           </Select>
+          {/* Import JSON */}
+          <input ref={fileInputRef} type="file" accept=".json" className="hidden" onChange={handleImportFile} />
+          <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="h-7 gap-1.5 text-xs font-normal">
+            <Upload size={12} /> {isImporting ? 'Importing...' : 'Import JSON'}
+          </Button>
+          {/* New Benchmark */}
+          <Button size="sm" onClick={() => setShowEditor(true)} className="h-7 gap-1.5 text-xs">
+            <Plus size={12} /> New Benchmark
+          </Button>
           {/* Refresh */}
           <Button variant="outline" size="sm" onClick={loadData} disabled={loading} className="h-7">
             <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
@@ -503,6 +542,19 @@ export const BenchmarksPage4: React.FC = () => {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Benchmark Editor Modal */}
+      {showEditor && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm">
+          <div className="fixed inset-4 z-50 overflow-auto bg-background border rounded-lg shadow-lg">
+            <BenchmarkEditor
+              benchmark={null}
+              onSave={(bm) => { setShowEditor(false); navigate(`/evals3/benchmarks/${bm.id}/runs`); }}
+              onCancel={() => setShowEditor(false)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
