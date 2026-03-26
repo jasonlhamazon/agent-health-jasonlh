@@ -59,6 +59,8 @@ interface RunDetailsContentProps {
   showViewAllReports?: boolean;
   onViewAllReports?: () => void;
   onEditTestCase?: (testCase: TestCase) => void;
+  /** When true, hides the metrics header and Summary tab. Used by RunInspectorPage to avoid redundancy. */
+  compact?: boolean;
 }
 
 export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
@@ -67,6 +69,7 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
   showViewAllReports = false,
   onViewAllReports,
   onEditTestCase,
+  compact = false,
 }) => {
   const [annotations, setAnnotations] = useState<RunAnnotation[]>([]);
   const [newAnnotation, setNewAnnotation] = useState('');
@@ -84,7 +87,7 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
   const [tracesLoading, setTracesLoading] = useState(false);
   const [tracesError, setTracesError] = useState<string | null>(null);
   const [tracesFetched, setTracesFetched] = useState(false);
-  const [activeTab, setActiveTab] = useState('summary');
+  const [activeTab, setActiveTab] = useState(compact ? 'trajectory' : 'summary');
   const [traceViewMode, setTraceViewMode] = useState<ViewMode>('info');
   const [traceFullscreenOpen, setTraceFullscreenOpen] = useState(false);
 
@@ -396,7 +399,8 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
 
   return (
     <div className={`flex flex-col h-full ${className}`}>
-      {/* Header */}
+      {/* Header — hidden in compact mode (RunInspectorPage provides its own) */}
+      {!compact && (
       <div className="bg-card border-b p-4">
         <div className="flex items-start justify-between mb-3">
           <h2 className="text-xl font-semibold">{testCase?.name || 'Unknown Test Case'}</h2>
@@ -622,13 +626,16 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
           </div>
         )}
       </div>
+      )}
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
         <TabsList className="w-full justify-start rounded-none border-b bg-card h-auto p-0">
+          {!compact && (
           <TabsTrigger value="summary" className="rounded-none border-b-2 border-transparent data-[state=active]:border-opensearch-blue data-[state=active]:text-opensearch-blue">
             <FileText size={14} className="mr-2" /> Summary
           </TabsTrigger>
+          )}
           <TabsTrigger value="trajectory" className="rounded-none border-b-2 border-transparent data-[state=active]:border-opensearch-blue data-[state=active]:text-opensearch-blue">
             <GitBranch size={14} className="mr-2" /> Conversation History
             <Badge variant="secondary" className="ml-2">{trajectory.length}</Badge>

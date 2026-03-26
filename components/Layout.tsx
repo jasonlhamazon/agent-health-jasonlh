@@ -73,9 +73,10 @@ const evalsSubItems = [
   { to: "/benchmarks3", label: "Benchmarks v3", testId: "nav-benchmarks3" },
 ];
 
-const evals2SubItems = [
-  { to: "/evals2/benchmarks", label: "Benchmarks", testId: "nav-evals2-benchmarks" },
-  { to: "/evals2/test-cases", label: "Test Cases", testId: "nav-evals2-test-cases" },
+const evals3SubItems = [
+  { to: "/evals3/benchmarks", label: "Benchmarks", testId: "nav-evals3-benchmarks" },
+  { to: "/evals3/test-cases", label: "Test Cases", testId: "nav-evals3-test-cases" },
+  { to: "/evals3/runs", label: "Evaluation Runs", testId: "nav-evals3-runs" },
 ];
 
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
@@ -86,10 +87,10 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   // Determine if evals section should be open based on current path
   const isEvalsPath = location.pathname.startsWith("/test-cases") ||
                       location.pathname.startsWith("/benchmarks");
-  const isEvals2Path = location.pathname.startsWith("/evals2");
+  const isEvals3Path = location.pathname.startsWith("/evals3");
   // Keep evals dropdown always open
   const [evalsOpen, setEvalsOpen] = useState(true);
-  const [evals2Open, setEvals2Open] = useState(true);
+  const [evals3Open, setEvals3Open] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [isCollapsed, setIsCollapsed] = useState(false);
   
@@ -288,33 +289,33 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                   </SidebarMenuItem>
                 )}
 
-                {/* Evals 2 collapsible section - only show when expanded */}
+                {/* Evaluations collapsible section - only show when expanded */}
                 {!isCollapsed && (
                   <Collapsible
-                    open={evals2Open}
-                    onOpenChange={setEvals2Open}
+                    open={evals3Open}
+                    onOpenChange={setEvals3Open}
                   >
                     <SidebarMenuItem>
                       <SidebarMenuButton
                         asChild
-                        tooltip="Evals 2"
-                        isActive={isEvals2Path}
+                        tooltip="Evaluations"
+                        isActive={isEvals3Path}
                         className="h-9 w-full"
                       >
                         <div className="flex items-center w-full">
-                          <Link to="/evals2/benchmarks" className="flex items-center gap-2 flex-1 min-w-0">
+                          <Link to="/evals3/benchmarks" className="flex items-center gap-2 flex-1 min-w-0">
                             <TestTube className="h-3.5 w-3.5" />
-                            <span className="text-xs">Evals 2</span>
+                            <span className="text-xs">Evaluations</span>
                           </Link>
                           <CollapsibleTrigger asChild>
                             <button
                               onClick={(e) => e.stopPropagation()}
                               className="p-0.5 rounded hover:bg-muted-foreground/20 transition-colors ml-auto"
-                              aria-label="Toggle evals 2 submenu"
+                              aria-label="Toggle evaluations submenu"
                             >
                               <ChevronDown 
                                 className={`h-3.5 w-3.5 transition-transform duration-200 ${
-                                  evals2Open ? 'rotate-180' : ''
+                                  evals3Open ? 'rotate-180' : ''
                                 }`} 
                               />
                             </button>
@@ -323,7 +324,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                       </SidebarMenuButton>
                       <CollapsibleContent>
                         <SidebarMenuSub className="ml-4 mt-1 space-y-1">
-                          {evals2SubItems.map((item) => (
+                          {evals3SubItems.map((item) => (
                             <SidebarMenuSubItem key={item.to}>
                               <SidebarMenuSubButton
                                 asChild
@@ -341,17 +342,17 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                   </Collapsible>
                 )}
 
-                {/* Evals 2 icon only when collapsed */}
+                {/* Evaluations icon only when collapsed */}
                 {isCollapsed && (
                   <SidebarMenuItem>
                     <SidebarMenuButton
                       asChild
-                      isActive={isEvals2Path}
-                      tooltip="Evals 2"
-                      data-testid="nav-evals2"
+                      isActive={isEvals3Path}
+                      tooltip="Evaluations"
+                      data-testid="nav-evals3"
                       className="h-9"
                     >
-                      <Link to="/evals2/benchmarks" className="justify-center">
+                      <Link to="/evals3/benchmarks" className="justify-center">
                         <TestTube className="h-4 w-4" />
                       </Link>
                     </SidebarMenuButton>
