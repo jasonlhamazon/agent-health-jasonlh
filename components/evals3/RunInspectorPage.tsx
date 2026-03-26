@@ -111,9 +111,10 @@ export const RunInspectorPage: React.FC = () => {
 
       setResults(resultRows);
 
-      // Auto-select first test case
+      // Auto-select first test case and expand it
       if (resultRows.length > 0 && !selectedTcId) {
         setSelectedTcId(resultRows[0].testCaseId);
+        setExpandedTcs(new Set([resultRows[0].testCaseId]));
       }
     } catch (error) {
       console.error('Failed to load:', error);
@@ -173,21 +174,28 @@ export const RunInspectorPage: React.FC = () => {
     <div className="h-full flex flex-col">
       {/* ── Top Summary Bar ────────────────────────────────────────── */}
       <div className="px-4 py-3 border-b bg-card shrink-0">
-        {/* Back + Title */}
+        {/* Back + Breadcrumb title */}
         <div className="flex items-center gap-3 mb-2">
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate(`/evals3/benchmarks/${benchmarkId}/runs`)}>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => navigate(-1)}>
             <ArrowLeft size={16} />
           </Button>
-          <div className="flex items-center gap-2 flex-1 min-w-0">
-            <h2 className="text-base font-semibold truncate">{run.name}</h2>
-            <Badge className="text-[9px] px-1.5 py-0 bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-500/15 dark:text-purple-400 dark:border-purple-500/30 font-semibold uppercase tracking-wider shrink-0">
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <button
+              className="text-sm text-muted-foreground hover:text-foreground transition-colors truncate"
+              onClick={() => navigate(`/evals3/benchmarks/${benchmarkId}/runs`)}
+            >
               {benchmark.name}
-            </Badge>
+            </button>
+            <ChevronRight size={16} className="text-muted-foreground/50 shrink-0" />
+            <h2 className="text-xl font-bold truncate">{run.name}</h2>
           </div>
         </div>
 
-        {/* Consolidated metrics row — all key info in one line */}
-        <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap">
+        {/* Metadata row — badge + all key info */}
+        <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap ml-10">
+          <Badge className="text-[10px] px-2 py-0.5 bg-muted text-muted-foreground border-border font-medium uppercase tracking-widest rounded shrink-0">
+            Evaluation Run
+          </Badge>
           <span className="flex items-center gap-1"><Calendar size={11} /> {formatDate(run.createdAt)}</span>
           <span className="text-muted-foreground/30">·</span>
           <span>Agent: <span className="text-foreground">{agentName}</span></span>
@@ -209,8 +217,14 @@ export const RunInspectorPage: React.FC = () => {
       {/* ── Main Content: Left Panel + Right Panel ─────────────────── */}
       <ResizablePanelGroup direction="horizontal" className="flex-1">
         {/* ── Left Panel: Test Case List ──────────────────────────── */}
-        <ResizablePanel defaultSize={30} minSize={20} maxSize={50} className="border-r">
+        <ResizablePanel defaultSize={35} minSize={25} maxSize={50} className="border-r">
           <ScrollArea className="h-full">
+            <div className="px-3 pt-2 pb-1 border-b">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Test Cases</span>
+                <span className="text-[10px] text-muted-foreground">{results.length}</span>
+              </div>
+            </div>
             <div className="p-2 space-y-0.5">
               {results.map(r => {
                 const isSelected = r.testCaseId === selectedTcId;
@@ -221,35 +235,37 @@ export const RunInspectorPage: React.FC = () => {
                   <div key={r.testCaseId}>
                     {/* Test case row */}
                     <div
-                      className={`flex items-center gap-2 px-2.5 py-2 rounded-md cursor-pointer transition-colors ${
+                      className={`flex items-start gap-2 px-2.5 py-2 rounded-md cursor-pointer transition-colors ${
                         isSelected ? 'bg-primary/10 border border-primary/30' : 'hover:bg-muted/50 border border-transparent'
                       }`}
                       onClick={() => setSelectedTcId(r.testCaseId)}
                     >
                       {/* Expand toggle */}
                       <button
-                        className="p-0.5 rounded hover:bg-muted text-muted-foreground shrink-0"
+                        className="p-0.5 rounded hover:bg-muted text-muted-foreground shrink-0 mt-0.5"
                         onClick={e => { e.stopPropagation(); toggleExpand(r.testCaseId); }}
                       >
                         {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                       </button>
 
-                      <StatusIcon status={r.status} size={14} />
+                      <div className="shrink-0 mt-0.5">
+                        <StatusIcon status={r.status} size={14} />
+                      </div>
 
                       <div className="flex-1 min-w-0">
-                        <div className={`text-xs font-medium truncate ${isSelected ? 'text-foreground' : ''}`}>
+                        <div className={`text-xs font-medium leading-snug break-words ${isSelected ? 'text-foreground' : ''}`}>
                           {tc?.name || r.testCaseId}
                         </div>
                         {tc?.labels && tc.labels.length > 0 && (
-                          <div className="flex items-center gap-1 mt-0.5">
+                          <div className="flex items-center gap-1 mt-0.5 flex-wrap">
                             {tc.labels.slice(0, 2).map(l => (
-                              <Badge key={l} variant="outline" className={`text-[8px] px-1 py-0 ${getLabelColor(l)}`}>{l}</Badge>
+                              <Badge key={l} variant="outline" className={`text-[7px] px-1 py-0 ${getLabelColor(l)}`}>{l}</Badge>
                             ))}
                           </div>
                         )}
                       </div>
 
-                      <span className={`text-[10px] font-semibold shrink-0 ${
+                      <span className={`text-[10px] font-semibold shrink-0 mt-0.5 ${
                         r.status === 'passed' ? 'text-green-500' : r.status === 'failed' ? 'text-red-500' : 'text-muted-foreground'
                       }`}>
                         {r.status === 'passed' ? 'PASS' : r.status === 'failed' ? 'FAIL' : r.status.toUpperCase()}
@@ -258,11 +274,11 @@ export const RunInspectorPage: React.FC = () => {
 
                     {/* Inline expand: input + expected output */}
                     {isExpanded && tc && (
-                      <div className="ml-8 mr-2 mb-1 mt-0.5 space-y-1.5">
+                      <div className="ml-7 mr-1 mb-1 mt-0.5 space-y-1.5 overflow-hidden">
                         {/* Input prompt */}
                         <div>
                           <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">Input</div>
-                          <div className="text-[11px] bg-muted/40 rounded px-2 py-1.5 border border-border max-h-20 overflow-y-auto whitespace-pre-wrap">
+                          <div className="text-[10px] bg-muted/40 rounded px-2 py-1.5 border border-border max-h-16 overflow-y-auto break-words leading-relaxed">
                             {tc.initialPrompt || '—'}
                           </div>
                         </div>
@@ -272,9 +288,9 @@ export const RunInspectorPage: React.FC = () => {
                             <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">Expected</div>
                             <ul className="space-y-0.5">
                               {tc.expectedOutcomes.map((o, i) => (
-                                <li key={i} className="text-[11px] text-muted-foreground flex items-start gap-1">
-                                  <CheckCircle2 size={10} className="text-green-500 mt-0.5 shrink-0" />
-                                  <span>{o}</span>
+                                <li key={i} className="text-[10px] text-muted-foreground flex items-start gap-1 leading-snug">
+                                  <CheckCircle2 size={9} className="text-green-500 mt-0.5 shrink-0" />
+                                  <span className="break-words min-w-0">{o}</span>
                                 </li>
                               ))}
                             </ul>
@@ -296,7 +312,7 @@ export const RunInspectorPage: React.FC = () => {
         <ResizableHandle withHandle />
 
         {/* ── Right Panel: Test Case Inspector ────────────────────── */}
-        <ResizablePanel defaultSize={70} minSize={50}>
+        <ResizablePanel defaultSize={65} minSize={50}>
           {selectedResult ? (
             reportLoading ? (
               <div className="flex items-center justify-center h-full">

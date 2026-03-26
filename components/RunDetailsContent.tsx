@@ -27,7 +27,6 @@ import {
   Pencil,
   Target,
   Hash,
-  Maximize2,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -35,9 +34,7 @@ import { EvaluationReport, RunAnnotation, TestCase, Span, TimeRange, TraceMetric
 import { fetchRunMetrics, formatCost, formatDuration, formatTokens } from '@/services/metrics';
 import { TrajectoryView } from './TrajectoryView';
 import { RawEventsPanel } from './RawEventsPanel';
-import TraceVisualization from './traces/TraceVisualization';
-import ViewToggle, { ViewMode } from './traces/ViewToggle';
-import TraceFullScreenView from './traces/TraceFullScreenView';
+import { TraceFlyoutContent, TraceTableRow } from './traces/TraceFlyoutContent';
 import { computeTrajectoryFromRawEvents } from '@/services/agent';
 import { fetchTracesByRunIds, processSpansIntoTree, calculateTimeRange } from '@/services/traces';
 import { DEFAULT_CONFIG } from '@/lib/constants';
@@ -88,8 +85,6 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
   const [tracesError, setTracesError] = useState<string | null>(null);
   const [tracesFetched, setTracesFetched] = useState(false);
   const [activeTab, setActiveTab] = useState(compact ? 'trajectory' : 'summary');
-  const [traceViewMode, setTraceViewMode] = useState<ViewMode>('info');
-  const [traceFullscreenOpen, setTraceFullscreenOpen] = useState(false);
 
   // Live report state for auto-refresh when judge completes
   // This allows the UI to update without a page refresh when metricsStatus changes
@@ -360,18 +355,6 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
   const fetchTracesOnDemand = async () => {
     if (tracesFetched || tracesLoading) return;
     await fetchTracesForReport();
-  };
-
-  const handleToggleExpand = (spanId: string) => {
-    setExpandedSpans(prev => {
-      const next = new Set(prev);
-      if (next.has(spanId)) {
-        next.delete(spanId);
-      } else {
-        next.add(spanId);
-      }
-      return next;
-    });
   };
 
   const handleAddAnnotation = async () => {
@@ -665,7 +648,7 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
           <TabsContent value="summary" className="p-6 mt-0 space-y-6">
             {/* Run Info */}
             <div>
-              <h3 className="text-lg font-semibold mb-3">Run Information</h3>
+              <h3 className="text-sm font-semibold mb-3">Run Information</h3>
               <div className="grid grid-cols-2 gap-4">
                 <Card><CardContent className="p-4">
                   <div className="text-xs text-muted-foreground mb-1">Agent</div>
@@ -704,7 +687,7 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
             {testCase && (
               <div>
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-lg font-semibold">Test Case Details</h3>
+                  <h3 className="text-sm font-semibold">Test Case Details</h3>
                   {onEditTestCase && (
                     <Button
                       variant="outline"
@@ -798,7 +781,7 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
           <TabsContent value="trajectory" className="p-6 mt-0">
             {/* Header with Toggle */}
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold">Conversation History</h3>
+              <h3 className="text-sm font-semibold">Conversation History</h3>
               <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
                 <button
                   onClick={() => setTrajectoryViewMode('processed')}
@@ -839,17 +822,10 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
             )}
           </TabsContent>
 
-          <TabsContent value="logs" className="p-6 mt-0 flex-1 flex flex-col min-h-0">
+          <TabsContent value="logs" className="mt-0 flex-1 flex flex-col min-h-0">
             {isTraceMode ? (
               /* TRACE MODE: Show trace visualization */
-              <div className="space-y-4 flex-1 flex flex-col min-h-0">
-                <div className="flex items-center justify-between flex-shrink-0">
-                  <h3 className="text-lg font-semibold">Traces</h3>
-                  {spanTree.length > 0 && !tracesLoading && (
-                    <ViewToggle viewMode={traceViewMode} onChange={setTraceViewMode} />
-                  )}
-                </div>
-
+              <div className="flex-1 flex flex-col min-h-0">
                 {/* Loading state */}
                 {tracesLoading && (
                   <div className="flex items-center justify-center py-12">
@@ -894,28 +870,24 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
                   </Card>
                 )}
 
-                {/* Trace visualization */}
+                {/* Embedded TraceFlyoutContent — full trace experience without flyout chrome */}
                 {spanTree.length > 0 && !tracesLoading && (
-                  <div className="space-y-4 flex-1 flex flex-col min-h-0">
-                    <Card className="flex-1 flex flex-col min-h-0">
-                      <CardContent className="p-0 flex-1 flex flex-col min-h-0">
-                        <div className="flex-1 min-h-0">
-                          <TraceVisualization
-                            spanTree={spanTree}
-                            timeRange={timeRange}
-                            initialViewMode={traceViewMode}
-                            onViewModeChange={setTraceViewMode}
-                            showViewToggle={false}
-                            selectedSpan={selectedSpan}
-                            onSelectSpan={setSelectedSpan}
-                            expandedSpans={expandedSpans}
-                            onToggleExpand={handleToggleExpand}
-                            showSpanDetailsPanel={true}
-                            runId={report.runId}
-                          />
-                        </div>
-                      </CardContent>
-                    </Card>
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <TraceFlyoutContent
+                      embedded
+                      trace={{
+                        traceId: report.runId || report.id,
+                        rootSpanName: testCase?.name || 'Unknown Test Case',
+                        serviceName: report.agentName,
+                        startTime: new Date(report.timestamp),
+                        duration: traceSpans.length > 0
+                          ? Math.max(...traceSpans.map(s => new Date(s.endTime).getTime())) - Math.min(...traceSpans.map(s => new Date(s.startTime).getTime()))
+                          : 0,
+                        spanCount: traceSpans.length,
+                        hasErrors: traceSpans.some(s => s.status === 'ERROR'),
+                        spans: traceSpans,
+                      } satisfies TraceTableRow}
+                    />
                   </div>
                 )}
 
@@ -933,26 +905,11 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
                     </Button>
                   </div>
                 )}
-
-                {/* Fullscreen Trace View */}
-                <TraceFullScreenView
-                  open={traceFullscreenOpen}
-                  onOpenChange={setTraceFullscreenOpen}
-                  title={`Traces: ${testCase?.name || 'Unknown Test Case'}`}
-                  subtitle={`Run ID: ${report.runId}`}
-                  spanTree={spanTree}
-                  timeRange={timeRange}
-                  selectedSpan={selectedSpan}
-                  onSelectSpan={setSelectedSpan}
-                  initialViewMode={traceViewMode}
-                  onViewModeChange={setTraceViewMode}
-                  spanCount={traceSpans.length}
-                />
               </div>
             ) : (
               /* STANDARD MODE: Show OpenSearch logs */
-              <>
-                <h3 className="text-lg font-semibold mb-4">OpenSearch Logs</h3>
+              <div className="p-6">
+                <h3 className="text-sm font-semibold mb-4">OpenSearch Logs</h3>
                 {report.logs && report.logs.length > 0 ? (
                   <div className="space-y-2">
                     {report.logs.map((log, index) => (
@@ -984,14 +941,14 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
                     <p>No OpenSearch logs available for this run</p>
                   </div>
                 )}
-              </>
+              </div>
             )}
           </TabsContent>
 
           <TabsContent value="judge" className="p-6 mt-0 space-y-6">
             {/* LLM Judge Reasoning */}
             <div>
-              <h3 className="text-lg font-semibold mb-3">LLM Judge Reasoning</h3>
+              <h3 className="text-sm font-semibold mb-3">LLM Judge Reasoning</h3>
               <Card><CardContent className="p-4">
                 <div className="prose dark:prose-invert max-w-none prose-headings:text-sm prose-p:text-sm prose-p:leading-relaxed prose-code:text-opensearch-blue prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-ul:text-sm prose-ol:text-sm">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -1004,8 +961,8 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
             {/* Improvement Strategies */}
             {liveReport.improvementStrategies && liveReport.improvementStrategies.length > 0 && (
               <div>
-                <h3 className="text-lg font-semibold mb-3 flex items-center">
-                  <Lightbulb size={18} className="mr-2" />
+                <h3 className="text-sm font-semibold mb-3 flex items-center">
+                  <Lightbulb size={14} className="mr-2" />
                   Improvement Strategies
                 </h3>
                 <div className="space-y-3">
@@ -1057,7 +1014,7 @@ export const RunDetailsContent: React.FC<RunDetailsContentProps> = ({
           </TabsContent>
 
           <TabsContent value="annotations" className="p-6 mt-0 space-y-4">
-            <h3 className="text-lg font-semibold mb-4">Annotations</h3>
+            <h3 className="text-sm font-semibold mb-4">Annotations</h3>
 
             {/* Add Annotation */}
             <Card><CardContent className="p-4">

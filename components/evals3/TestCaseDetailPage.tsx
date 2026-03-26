@@ -155,7 +155,7 @@ export const TestCaseDetailPage: React.FC = () => {
     <div className="p-6 h-full overflow-y-auto">
       {/* ── Back + Actions ─────────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-4">
-        <Button variant="ghost" size="sm" onClick={() => navigate('/evals3/test-cases')} className="gap-1.5">
+        <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="gap-1.5">
           <ArrowLeft size={16} /> Back to Test Cases
         </Button>
         <div className="flex items-center gap-2">
@@ -178,7 +178,7 @@ export const TestCaseDetailPage: React.FC = () => {
               <div className="flex-1 min-w-0">
                 {/* Type badge + name */}
                 <div className="flex items-center gap-2 mb-2">
-                  <Badge className="text-[10px] px-1.5 py-0 bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-500/15 dark:text-blue-500 dark:border-blue-500/30 font-semibold uppercase tracking-wider">
+                  <Badge className="text-[10px] px-2 py-0.5 bg-muted text-muted-foreground border-border font-medium uppercase tracking-widest rounded">
                     Test Case
                   </Badge>
                   <span className="text-[10px] text-muted-foreground">v{testCase.currentVersion}</span>

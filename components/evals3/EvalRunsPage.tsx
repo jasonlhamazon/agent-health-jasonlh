@@ -55,7 +55,6 @@ interface RunRow {
   passed: number;
   failed: number;
   total: number;
-  score: number | null;
 }
 
 function SortHeader({ label, active, dir, onClick, className }: {
@@ -77,10 +76,9 @@ function SortHeader({ label, active, dir, onClick, className }: {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function computeRunStats(run: BenchmarkRun): { passed: number; failed: number; total: number; score: number | null } {
+function computeRunStats(run: BenchmarkRun): { passed: number; failed: number; total: number } {
   if (run.stats && run.stats.total > 0) {
-    const score = Math.round((run.stats.passed / run.stats.total) * 100);
-    return { passed: run.stats.passed, failed: run.stats.failed, total: run.stats.total, score };
+    return { passed: run.stats.passed, failed: run.stats.failed, total: run.stats.total };
   }
   const results = Object.values(run.results || {});
   let passed = 0, failed = 0;
@@ -89,8 +87,7 @@ function computeRunStats(run: BenchmarkRun): { passed: number; failed: number; t
     else if (r.status === 'failed' || r.status === 'cancelled') failed++;
   }
   const total = results.length;
-  const score = total > 0 ? Math.round((passed / total) * 100) : null;
-  return { passed, failed, total, score };
+  return { passed, failed, total };
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
@@ -103,11 +100,11 @@ export const EvalRunsPage: React.FC = () => {
 
   // Filters
   const [search, setSearch] = useState('');
-  const [timeRange, setTimeRange] = useState<TimeRange>('1d');
+  const [timeRange, setTimeRange] = useState<TimeRange>('30d');
   const [selectedAgent, setSelectedAgent] = useState('all');
 
   // View
-  const [viewMode, setViewMode] = useState<ViewMode>('grouped');
+  const [viewMode, setViewMode] = useState<ViewMode>('flat');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [sort, setSort] = useState<{ field: string; dir: 'asc' | 'desc' }>({ field: 'timestamp', dir: 'desc' });
 
@@ -181,10 +178,7 @@ export const EvalRunsPage: React.FC = () => {
 
   // Summary
   const totalRuns = allRunRows.length;
-  const passedRuns = allRunRows.filter(r => r.score !== null && r.score >= 80).length;
-  const avgScore = allRunRows.length > 0
-    ? Math.round(allRunRows.filter(r => r.score !== null).reduce((s, r) => s + (r.score || 0), 0) / Math.max(allRunRows.filter(r => r.score !== null).length, 1))
-    : 0;
+  const passedRuns = allRunRows.filter(r => r.failed === 0 && r.passed > 0).length;
 
   // Sort
   const sortRows = useCallback((rows: RunRow[]) => {
@@ -195,7 +189,6 @@ export const EvalRunsPage: React.FC = () => {
         case 'benchmark': return dir * a.benchmarkName.localeCompare(b.benchmarkName);
         case 'agent': return dir * a.agentName.localeCompare(b.agentName);
         case 'timestamp': return dir * (new Date(a.run.createdAt).getTime() - new Date(b.run.createdAt).getTime());
-        case 'score': return dir * ((a.score ?? -1) - (b.score ?? -1));
         case 'results': return dir * (a.total - b.total);
         default: return 0;
       }
@@ -257,11 +250,7 @@ export const EvalRunsPage: React.FC = () => {
         <td className="px-3 py-2.5 align-middle text-xs">{rr.agentName}</td>
         <td className="px-3 py-2.5 align-middle text-xs">{getModelName(rr.run.modelId)}</td>
         <td className="px-3 py-2.5 align-middle text-[11px] text-muted-foreground whitespace-nowrap">{formatRelativeTime(rr.run.createdAt)}</td>
-        <td className="px-3 py-2.5 align-middle text-right">
-          {rr.score !== null
-            ? <span className={`text-xs font-semibold tabular-nums ${rr.score >= 80 ? 'text-green-500' : rr.score >= 50 ? 'text-amber-500' : 'text-red-500'}`}>{rr.score}%</span>
-            : <span className="text-xs text-muted-foreground">—</span>}
-        </td>
+        <td className="px-3 py-2.5 align-middle text-center text-[11px] text-muted-foreground">—</td>
         <td className="px-3 py-2.5 align-middle text-right">
           <div className="inline-flex items-center gap-1.5 text-xs">
             <span className="text-green-500 font-medium">{rr.passed}</span>
@@ -325,7 +314,7 @@ export const EvalRunsPage: React.FC = () => {
         </div>
         <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
           <BarChart3 size={16} className="text-purple-500" />
-          <div><div className={`text-lg font-semibold leading-tight ${avgScore >= 50 ? 'text-green-500' : 'text-red-500'}`}>{avgScore}%</div><div className="text-[11px] text-muted-foreground">Avg Score</div></div>
+          <div><div className="text-lg font-semibold leading-tight">{passedRuns}</div><div className="text-[11px] text-muted-foreground">All Passed</div></div>
         </div>
       </div>
 
@@ -361,7 +350,7 @@ export const EvalRunsPage: React.FC = () => {
               <SortHeader label="Agent" active={sort.field === 'agent'} dir={sort.dir} onClick={() => handleSort('agent')} />
               <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b whitespace-nowrap">Model</th>
               <SortHeader label="Timestamp" active={sort.field === 'timestamp'} dir={sort.dir} onClick={() => handleSort('timestamp')} />
-              <SortHeader label="Score" active={sort.field === 'score'} dir={sort.dir} onClick={() => handleSort('score')} className="text-right" />
+              <th className="h-8 px-3 text-center align-middle font-medium text-xs text-muted-foreground bg-background border-b whitespace-nowrap">Annotations</th>
               <SortHeader label="Pass/Fail/Total" active={sort.field === 'results'} dir={sort.dir} onClick={() => handleSort('results')} className="text-right" />
             </tr>
           </thead>
@@ -378,9 +367,7 @@ export const EvalRunsPage: React.FC = () => {
               groupedByBenchmark.map(group => {
                 const isCollapsed = collapsedGroups.has(group.id);
                 const sorted = sortRows(group.rows);
-                const groupAvg = group.rows.length > 0
-                  ? Math.round(group.rows.filter(r => r.score !== null).reduce((s, r) => s + (r.score || 0), 0) / Math.max(group.rows.filter(r => r.score !== null).length, 1))
-                  : 0;
+                const groupPassed = group.rows.filter(r => r.failed === 0 && r.passed > 0).length;
                 return (
                   <React.Fragment key={group.id}>
                     <tr
@@ -397,9 +384,7 @@ export const EvalRunsPage: React.FC = () => {
                           </Badge>
                           <span className="text-xs font-semibold">{group.name}</span>
                           <span className="text-[10px] text-muted-foreground">({group.rows.length} run{group.rows.length !== 1 ? 's' : ''})</span>
-                          <span className={`text-[10px] font-medium ml-1 ${groupAvg >= 50 ? 'text-green-500' : 'text-red-500'}`}>
-                            {groupAvg}% avg
-                          </span>
+                          <span className="text-[10px] text-muted-foreground">{groupPassed}/{group.rows.length} all passed</span>
                         </div>
                       </td>
                     </tr>

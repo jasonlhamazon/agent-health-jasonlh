@@ -58,7 +58,7 @@ import {
 import { categorizeSpanTree } from '@/services/traces/spanCategorization';
 import { cn } from '@/lib/utils';
 
-interface TraceTableRow {
+export interface TraceTableRow {
   traceId: string;
   rootSpanName: string;
   serviceName: string;
@@ -71,12 +71,15 @@ interface TraceTableRow {
 
 interface TraceFlyoutContentProps {
   trace: TraceTableRow;
-  onClose: () => void;
+  onClose?: () => void;
+  /** When true, hides the flyout chrome (title, close/fullscreen, metrics row) but keeps distribution bar + category pills + view toggle + span tree. */
+  embedded?: boolean;
 }
 
 export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
   trace,
   onClose,
+  embedded = false,
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('timeline'); // Start with Trace Tree view
   const [selectedSpan, setSelectedSpan] = useState<Span | null>(null);
@@ -280,84 +283,101 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
 
   return (
     <div className="h-full flex flex-col">
-      {/* Compact Header */}
-      <div className="px-4 py-4 border-b bg-card">
-        {/* Title Row with Trace ID */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3 flex-1 min-w-0">
-            {trace.hasErrors ? (
-              <XCircle size={18} className="text-red-700 dark:text-red-400 flex-shrink-0" />
-            ) : (
-              <CheckCircle2 size={18} className="text-green-700 dark:text-green-400 flex-shrink-0" />
-            )}
-            <h2 className="text-base font-semibold truncate">{trace.rootSpanName}</h2>
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="font-mono">trace-{trace.traceId.slice(0, 8)}</span>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                onClick={handleCopyTraceId}
-                title="Copy full trace ID"
-              >
-                {copiedTraceId ? (
-                  <Check size={12} className="text-green-700 dark:text-green-400" />
+      {/* Compact Header — hidden in embedded mode except distribution bar + category pills */}
+      <div className={`px-4 ${embedded ? 'py-2' : 'py-4'} border-b bg-card`}>
+        {embedded && (
+          /* Embedded mode: compact trace info line with badge + name + span count */
+          <div className="flex items-center gap-2 mb-2 text-xs">
+            <Badge className="text-[9px] px-1.5 py-0 bg-muted text-muted-foreground border-border font-medium uppercase tracking-widest rounded shrink-0">
+              Trace
+            </Badge>
+            <span className="font-medium text-foreground truncate">{trace.rootSpanName}</span>
+            <span className="text-muted-foreground shrink-0">·</span>
+            <span className="text-muted-foreground shrink-0">{trace.spanCount} spans</span>
+            <span className="text-muted-foreground shrink-0">·</span>
+            <span className="text-amber-700 dark:text-amber-400 font-medium shrink-0">{formatDuration(trace.duration)}</span>
+          </div>
+        )}
+        {!embedded && (
+          <>
+            {/* Title Row with Trace ID */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                {trace.hasErrors ? (
+                  <XCircle size={18} className="text-red-700 dark:text-red-400 flex-shrink-0" />
                 ) : (
-                  <Copy size={12} />
+                  <CheckCircle2 size={18} className="text-green-700 dark:text-green-400 flex-shrink-0" />
                 )}
-              </Button>
+                <h2 className="text-base font-semibold truncate">{trace.rootSpanName}</h2>
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span className="font-mono">trace-{trace.traceId.slice(0, 8)}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6"
+                    onClick={handleCopyTraceId}
+                    title="Copy full trace ID"
+                  >
+                    {copiedTraceId ? (
+                      <Check size={12} className="text-green-700 dark:text-green-400" />
+                    ) : (
+                      <Copy size={12} />
+                    )}
+                  </Button>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Button 
+                  variant="outline" 
+                  size="icon" 
+                  className="h-8 w-8 border-border hover:bg-muted hover:border-muted-foreground/30" 
+                  onClick={() => setFullscreenOpen(true)}
+                  title="Fullscreen"
+                >
+                  <Maximize2 size={14} />
+                </Button>
+                <Button 
+                  variant="outline" 
+                  size="icon" 
+                  className="h-8 w-8 border-border hover:bg-muted hover:border-muted-foreground/30" 
+                  onClick={onClose}
+                  title="Close"
+                >
+                  <X size={14} />
+                </Button>
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Button 
-              variant="outline" 
-              size="icon" 
-              className="h-8 w-8 border-border hover:bg-muted hover:border-muted-foreground/30" 
-              onClick={() => setFullscreenOpen(true)}
-              title="Fullscreen"
-            >
-              <Maximize2 size={14} />
-            </Button>
-            <Button 
-              variant="outline" 
-              size="icon" 
-              className="h-8 w-8 border-border hover:bg-muted hover:border-muted-foreground/30" 
-              onClick={onClose}
-              title="Close"
-            >
-              <X size={14} />
-            </Button>
-          </div>
-        </div>
 
-        {/* Unified Metrics Row - All key metrics as pills */}
-        <div className="flex items-center gap-3 text-sm mb-4">
-          {/* Core metrics */}
-          <div className="flex items-center gap-2">
-            <span className="font-medium">{trace.spanCount} spans</span>
-            <span className="text-muted-foreground">•</span>
-            <span className="font-medium text-amber-700 dark:text-amber-400">{formatDuration(trace.duration)}</span>
-            {trace.hasErrors && (
-              <>
+            {/* Unified Metrics Row - All key metrics as pills */}
+            <div className="flex items-center gap-3 text-sm mb-4">
+              {/* Core metrics */}
+              <div className="flex items-center gap-2">
+                <span className="font-medium">{trace.spanCount} spans</span>
                 <span className="text-muted-foreground">•</span>
-                <span className="text-red-700 dark:text-red-400 font-medium">
-                  {spanStats.byStatus.error} {spanStats.byStatus.error === 1 ? 'error' : 'errors'}
-                </span>
-              </>
-            )}
-          </div>
-          
-          {/* Divider */}
-          <div className="h-4 w-px bg-border" />
-          
-          {/* Start time */}
-          <div className="flex items-center gap-1.5 text-xs">
-            <span className="text-muted-foreground">Start time:</span>
-            <span className="font-medium">{trace.startTime.toLocaleString()}</span>
-          </div>
-        </div>
+                <span className="font-medium text-amber-700 dark:text-amber-400">{formatDuration(trace.duration)}</span>
+                {trace.hasErrors && (
+                  <>
+                    <span className="text-muted-foreground">•</span>
+                    <span className="text-red-700 dark:text-red-400 font-medium">
+                      {spanStats.byStatus.error} {spanStats.byStatus.error === 1 ? 'error' : 'errors'}
+                    </span>
+                  </>
+                )}
+              </div>
+              
+              {/* Divider */}
+              <div className="h-4 w-px bg-border" />
+              
+              {/* Start time */}
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-muted-foreground">Start time:</span>
+                <span className="font-medium">{trace.startTime.toLocaleString()}</span>
+              </div>
+            </div>
+          </>
+        )}
 
-        {/* Trace Summary Pills - Interactive and expandable */}
+        {/* Trace Summary Pills - Interactive and expandable (always visible) */}
         <div className="space-y-2.5">
           {/* Compact Time Distribution Bar - No legend, hover for details */}
           <div className="flex items-center gap-2">
@@ -657,7 +677,7 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
       {/* Main Content - View Toggle + Visualization */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* View Toggle */}
-        <div className="px-4 py-3 border-b bg-card">
+        <div className={`px-4 ${embedded ? 'py-1.5' : 'py-3'} border-b bg-card`}>
           <div className="inline-flex items-center rounded-lg border bg-muted p-1 gap-1">
             <Button
               variant={viewMode === 'timeline' ? 'default' : 'ghost'}
@@ -717,20 +737,22 @@ export const TraceFlyoutContent: React.FC<TraceFlyoutContentProps> = ({
         </div>
       </div>
 
-      {/* Fullscreen View */}
-      <TraceFullScreenView
-        open={fullscreenOpen}
-        onOpenChange={setFullscreenOpen}
-        title={trace.rootSpanName}
-        subtitle={`Trace ID: ${trace.traceId.slice(0, 16)}...`}
-        spanTree={spanTree}
-        timeRange={timeRange}
-        selectedSpan={selectedSpan}
-        onSelectSpan={setSelectedSpan}
-        initialViewMode={viewMode}
-        onViewModeChange={setViewMode}
-        spanCount={trace.spanCount}
-      />
+      {/* Fullscreen View — not needed in embedded mode */}
+      {!embedded && (
+        <TraceFullScreenView
+          open={fullscreenOpen}
+          onOpenChange={setFullscreenOpen}
+          title={trace.rootSpanName}
+          subtitle={`Trace ID: ${trace.traceId.slice(0, 16)}...`}
+          spanTree={spanTree}
+          timeRange={timeRange}
+          selectedSpan={selectedSpan}
+          onSelectSpan={setSelectedSpan}
+          initialViewMode={viewMode}
+          onViewModeChange={setViewMode}
+          spanCount={trace.spanCount}
+        />
+      )}
     </div>
   );
 };

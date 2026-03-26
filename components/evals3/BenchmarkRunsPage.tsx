@@ -369,7 +369,7 @@ export const BenchmarkRunsPage2: React.FC = () => {
       {/* ── Header ─────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate(parentPath)}>
+          <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
             <ArrowLeft size={18} />
           </Button>
           <div>

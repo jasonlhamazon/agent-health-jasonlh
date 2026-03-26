@@ -156,7 +156,7 @@ export const BenchmarkRunDetailPage: React.FC = () => {
   return (
     <div className="p-6 h-full overflow-y-auto">
       {/* Back */}
-      <Button variant="ghost" size="sm" onClick={() => navigate(`/evals3/benchmarks/${benchmarkId}/runs`)} className="gap-1.5 mb-4">
+      <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="gap-1.5 mb-4">
         <ArrowLeft size={16} /> Back to {benchmark.name}
       </Button>
 
@@ -168,7 +168,7 @@ export const BenchmarkRunDetailPage: React.FC = () => {
             <div className="flex items-start justify-between">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-2">
-                  <Badge className="text-[10px] px-1.5 py-0 bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-500/15 dark:text-purple-400 dark:border-purple-500/30 font-semibold uppercase tracking-wider">
+                  <Badge className="text-[10px] px-2 py-0.5 bg-muted text-muted-foreground border-border font-medium uppercase tracking-widest rounded">
                     Benchmark Run
                   </Badge>
                   {run.benchmarkVersion && (

@@ -46,7 +46,7 @@ export const TestCaseInspectorPanel: React.FC<TestCaseInspectorPanelProps> = ({
             {isPassed
               ? <CheckCircle2 size={16} className="text-green-500 shrink-0" />
               : <XCircle size={16} className="text-red-500 shrink-0" />}
-            <span className="text-sm font-semibold truncate">{testCase?.name || report.testCaseId}</span>
+            <span className="text-base font-semibold truncate">{testCase?.name || report.testCaseId}</span>
             <Badge className={`text-[9px] px-1.5 py-0 shrink-0 ${
               isPassed ? 'bg-green-100 text-green-700 border-green-300 dark:bg-green-500/15 dark:text-green-500 dark:border-green-500/30' : 'bg-red-100 text-red-700 border-red-300 dark:bg-red-500/15 dark:text-red-500 dark:border-red-500/30'
             }`}>
@@ -56,6 +56,9 @@ export const TestCaseInspectorPanel: React.FC<TestCaseInspectorPanelProps> = ({
         </div>
 
         <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">
+          <Badge className="text-[10px] px-2 py-0.5 bg-muted text-muted-foreground border-border font-medium uppercase tracking-widest rounded shrink-0">
+            Test Case Result
+          </Badge>
           {accuracy != null && (
             <span className="flex items-center gap-1">
               <Target size={10} />
