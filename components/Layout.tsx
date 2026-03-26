@@ -84,6 +84,22 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const isEvalsPath = location.pathname.startsWith("/test-cases") ||
                       location.pathname.startsWith("/benchmarks");
   const isEvals3Path = location.pathname.startsWith("/evals3");
+
+  // Determine which evals3 sub-item is active
+  // Run inspector pages (/evals3/benchmarks/:id/runs/:runId/inspect) should
+  // highlight "Evaluation Runs" not "Benchmarks"
+  const getEvals3SubItemActive = (itemTo: string): boolean => {
+    const p = location.pathname;
+    if (itemTo === '/evals3/runs') {
+      // "Evaluation Runs" is active for its own path AND for run inspector/inspect paths
+      return p === itemTo || p.startsWith(itemTo + '/') || /\/evals3\/benchmarks\/[^/]+\/runs\/[^/]+/.test(p);
+    }
+    if (itemTo === '/evals3/benchmarks') {
+      // "Benchmarks" is active for its own path and benchmark runs list, but NOT for run inspector
+      return (p === itemTo || p.startsWith(itemTo + '/')) && !/\/evals3\/benchmarks\/[^/]+\/runs\/[^/]+/.test(p);
+    }
+    return p === itemTo || p.startsWith(itemTo + '/');
+  };
   // Keep evals dropdown always open
   const [evalsOpen, setEvalsOpen] = useState(true);
   const [evals3Open, setEvals3Open] = useState(true);
@@ -324,7 +340,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                             <SidebarMenuSubItem key={item.to}>
                               <SidebarMenuSubButton
                                 asChild
-                                isActive={location.pathname === item.to || location.pathname.startsWith(item.to + "/")}
+                                isActive={getEvals3SubItemActive(item.to)}
                                 data-testid={item.testId}
                                 className="h-8"
                               >

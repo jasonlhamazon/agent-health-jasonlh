@@ -87,8 +87,13 @@ export const TestCaseDetailPage: React.FC = () => {
       const sorted = reports.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       setRuns(sorted);
       setTotalRuns(total);
-      // Auto-select first run
-      if (sorted.length > 0 && !selectedRunId) setSelectedRunId(sorted[0].id);
+      // Auto-select first run, auto-open definition if no runs
+      if (sorted.length > 0 && !selectedRunId) {
+        setSelectedRunId(sorted[0].id);
+      }
+      if (sorted.length === 0) {
+        setDefinitionOpen(true);
+      }
     } catch (error) {
       console.error('Failed to load test case:', error);
     } finally {
@@ -306,7 +311,12 @@ export const TestCaseDetailPage: React.FC = () => {
             <div className="flex items-center justify-center h-full text-muted-foreground">
               <div className="text-center">
                 <FileText size={32} className="mx-auto mb-3 opacity-20" />
-                <p className="text-sm">Select a run to inspect</p>
+                <p className="text-sm">{filteredRuns.length === 0 ? 'No test case runs yet' : 'Select a run to inspect'}</p>
+                {filteredRuns.length === 0 && testCase && (
+                  <Button size="sm" className="mt-3 bg-opensearch-blue hover:bg-blue-600" onClick={() => setRunningTestCase(testCase)}>
+                    <Play size={12} className="mr-1" /> Run Test
+                  </Button>
+                )}
               </div>
             </div>
           )}
