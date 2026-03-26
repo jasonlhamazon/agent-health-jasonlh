@@ -14,6 +14,7 @@ import {
   ChevronRight, ChevronDown, CheckCircle2, XCircle,
   Loader2, Clock, Search, RefreshCw, Activity, BarChart3,
   SlidersHorizontal, Layers, List, ChevronsDownUp, ChevronsUpDown, Upload, Plus,
+  Pencil, Play, Calendar,
 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -24,6 +25,7 @@ import { asyncTestCaseStorage, asyncRunStorage, asyncBenchmarkStorage } from '@/
 import { TestCase, TestCaseRun, Benchmark } from '@/types';
 import { formatRelativeTime } from '@/lib/utils';
 import { TestCaseEditor } from '../TestCaseEditor';
+import { QuickRunModal } from '../QuickRunModal';
 import { validateTestCasesArrayJson } from '@/lib/testCaseValidation';
 
 // ─── Time Filter ─────────────────────────────────────────────────────────────
@@ -101,6 +103,7 @@ export const TestCasesPage4: React.FC = () => {
   const [isImporting, setIsImporting] = useState(false);
   const [showEditor, setShowEditor] = useState(false);
   const [editingTestCase, setEditingTestCase] = useState<TestCase | null>(null);
+  const [runningTestCase, setRunningTestCase] = useState<TestCase | null>(null);
 
   // Sort
   const [sort, setSort] = useState<{ field: SortField; dir: SortDir }>({ field: 'name', dir: 'asc' });
@@ -304,9 +307,6 @@ export const TestCasesPage4: React.FC = () => {
 
   // Render a test case row (shared between grouped and flat)
   const renderTcRow = (tc: TestCase, indent: boolean = false) => {
-    const lastRun = latestRunByTc[tc.id];
-    const pr = passRateByTc[tc.id];
-    const passRate = pr && pr.total > 0 ? Math.round((pr.passed / pr.total) * 100) : null;
     const bmList = tcBenchmarkMap.get(tc.id) || [];
     return (
       <tr key={tc.id} className="border-b hover:bg-muted/50 cursor-pointer transition-colors"
@@ -342,27 +342,22 @@ export const TestCasesPage4: React.FC = () => {
             </div>
           )}
         </td>
-        {/* Pass Rate */}
-        <td className="px-3 py-2.5 align-middle text-right">
-          {passRate !== null ? (
-            <span className={`text-xs font-semibold tabular-nums ${passRate >= 80 ? 'text-green-500' : passRate >= 50 ? 'text-amber-600 dark:text-amber-400' : 'text-red-500'}`}>
-              {passRate}%
-            </span>
-          ) : <span className="text-[11px] text-muted-foreground">—</span>}
+        {/* Created */}
+        <td className="px-3 py-2.5 align-middle text-[11px] text-muted-foreground whitespace-nowrap">
+          <span className="flex items-center gap-1"><Calendar size={10} />{formatRelativeTime(tc.createdAt)}</span>
         </td>
-        {/* Last Run — ✓/✗ + relative time as clickable link */}
-        <td className="px-3 py-2.5 align-middle">
-          {lastRun ? (
-            <button
-              className="inline-flex items-center gap-1.5 text-[11px] text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline transition-colors"
-              onClick={e => { e.stopPropagation(); navigate(`/runs/${lastRun.id}`); }}
-            >
-              {lastRun.passed === true && <CheckCircle2 size={11} className="text-green-500 shrink-0" />}
-              {lastRun.passed === false && <XCircle size={11} className="text-red-500 shrink-0" />}
-              {lastRun.passed === null && <Clock size={11} className="text-muted-foreground shrink-0" />}
-              {formatRelativeTime(lastRun.timestamp)}
-            </button>
-          ) : <span className="text-[11px] text-muted-foreground">—</span>}
+        {/* Actions */}
+        <td className="px-3 py-2.5 align-middle text-right">
+          <div className="inline-flex items-center gap-1">
+            <Button variant="ghost" size="icon" className="h-7 w-7" title="Run"
+              onClick={e => { e.stopPropagation(); setRunningTestCase(tc); }}>
+              <Play size={13} />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit"
+              onClick={e => { e.stopPropagation(); setEditingTestCase(tc); setShowEditor(true); }}>
+              <Pencil size={13} />
+            </Button>
+          </div>
         </td>
       </tr>
     );
@@ -451,8 +446,8 @@ export const TestCasesPage4: React.FC = () => {
                   <SortHeader label="Name" active={sort.field === 'name'} dir={sort.dir} onClick={() => handleSort('name')} />
                   <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b whitespace-nowrap">Description</th>
                   <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b whitespace-nowrap"></th>
-                  <SortHeader label="Pass Rate" active={sort.field === 'passRate'} dir={sort.dir} onClick={() => handleSort('passRate')} className="text-right" />
-                  <SortHeader label="Last Run" active={sort.field === 'lastRun'} dir={sort.dir} onClick={() => handleSort('lastRun')} />
+                  <th className="h-8 px-3 text-left align-middle font-medium text-xs text-muted-foreground bg-background border-b whitespace-nowrap">Created</th>
+                  <th className="h-8 px-3 text-right align-middle font-medium text-xs text-muted-foreground bg-background border-b whitespace-nowrap">Actions</th>
                 </tr>
               </thead>
               <tbody className="[&_tr:last-child]:border-0">
@@ -552,6 +547,10 @@ export const TestCasesPage4: React.FC = () => {
             <TestCaseEditor testCase={editingTestCase} onSave={handleEditorSave} onCancel={() => { setShowEditor(false); setEditingTestCase(null); }} />
           </div>
         </div>
+      )}
+      {/* Quick Run Modal */}
+      {runningTestCase && (
+        <QuickRunModal testCase={runningTestCase} onClose={() => { setRunningTestCase(null); loadDefinitions(); }} onSaveAsTestCase={() => {}} />
       )}
     </div>
   );
