@@ -14,7 +14,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   CheckCircle2, XCircle, Loader2, Clock, Search, RefreshCw,
   Activity, BarChart3, SlidersHorizontal, ChevronDown, ChevronRight,
-  Layers, List, GitCompare,
+  Layers, List, GitCompare, AlertTriangle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -229,6 +229,13 @@ export const EvalRunsPage: React.FC = () => {
 
   const atLimit = selectedRuns.size >= MAX_COMPARE;
 
+  // Check if selected runs span multiple benchmarks
+  const isMultiBenchmark = useMemo(() => {
+    if (selectedRuns.size < 2) return false;
+    const benchmarkIds = new Set(allRunRows.filter(rr => selectedRuns.has(rr.run.id)).map(rr => rr.benchmarkId));
+    return benchmarkIds.size > 1;
+  }, [selectedRuns, allRunRows]);
+
   // Toggle all runs in a benchmark group (bypasses individual limit)
   const toggleBenchmarkSelection = (groupRunIds: string[], e: React.MouseEvent) => {
     e.stopPropagation();
@@ -384,6 +391,20 @@ export const EvalRunsPage: React.FC = () => {
           })()}
         </div>
       </div>
+
+      {/* ── Multi-benchmark warning banner ──────────────────────────── */}
+      {isMultiBenchmark && (
+        <div className="flex items-center gap-2 px-3 py-2 mb-3 rounded-lg border border-amber-300 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 text-amber-800 dark:text-amber-300 text-xs">
+          <AlertTriangle size={14} className="shrink-0" />
+          <span>Compare requires runs from the same benchmark. Deselect runs from other benchmarks or use "Group by Benchmark" to select within one.</span>
+          <button
+            className="ml-auto text-[10px] underline text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-200 shrink-0"
+            onClick={() => setSelectedRuns(new Set())}
+          >
+            Clear selection
+          </button>
+        </div>
+      )}
 
       {/* ── Summary Cards ──────────────────────────────────────────── */}
       <div className="grid grid-cols-3 gap-3 mb-4">
