@@ -651,7 +651,7 @@ export const EvalRunsPage: React.FC = () => {
             <div className="text-lg font-semibold leading-tight">{overallPassRate}%</div>
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="text-[11px] text-muted-foreground border-b border-dotted border-muted-foreground/50 cursor-help">Overall Pass Rate</span>
+                <span className="text-[11px] text-muted-foreground border-b border-dotted border-muted-foreground/50 cursor-default">Overall Pass Rate</span>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="max-w-[220px] text-xs">
                 Total passed test cases ÷ total test cases across all runs in this time range ({totalPassed}/{totalTestCases})
@@ -665,7 +665,7 @@ export const EvalRunsPage: React.FC = () => {
             <div className="text-lg font-semibold leading-tight">{avgAccuracy}%</div>
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="text-[11px] text-muted-foreground border-b border-dotted border-muted-foreground/50 cursor-help">Avg Accuracy</span>
+                <span className="text-[11px] text-muted-foreground border-b border-dotted border-muted-foreground/50 cursor-default">Avg Accuracy</span>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="max-w-[220px] text-xs">
                 Average pass rate per run — measures how well agents perform across all evaluation runs
@@ -687,7 +687,7 @@ export const EvalRunsPage: React.FC = () => {
             </div>
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="text-[11px] text-muted-foreground border-b border-dotted border-muted-foreground/50 cursor-help">
+                <span className="text-[11px] text-muted-foreground border-b border-dotted border-muted-foreground/50 cursor-default">
                   Regressions
                 </span>
               </TooltipTrigger>
