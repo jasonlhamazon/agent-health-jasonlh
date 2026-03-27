@@ -14,7 +14,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   CheckCircle2, XCircle, Loader2, Clock, Search, RefreshCw,
   Activity, BarChart3, SlidersHorizontal, ChevronDown, ChevronRight,
-  Layers, List,
+  Layers, List, GitCompare,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -357,6 +357,31 @@ export const EvalRunsPage: React.FC = () => {
           <Button variant="outline" size="sm" onClick={loadData} disabled={loading} className="h-7">
             <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
           </Button>
+          {(() => {
+            const selectedRows = allRunRows.filter(rr => selectedRuns.has(rr.run.id));
+            const benchmarkIds = new Set(selectedRows.map(rr => rr.benchmarkId));
+            const multiBenchmark = benchmarkIds.size > 1;
+            const canCompare = selectedRuns.size >= 2 && !multiBenchmark;
+            return (
+              <Button
+                variant="outline"
+                size="sm"
+                className={`h-7 gap-1.5 text-xs ${selectedRuns.size > 0 ? 'border-primary/50' : ''}`}
+                disabled={selectedRuns.size < 2 || multiBenchmark}
+                onClick={() => {
+                  if (!canCompare) return;
+                  const bmId = [...benchmarkIds][0];
+                  const ids = selectedRows.map(rr => rr.run.id).join(',');
+                  navigate(`/compare/${bmId}?runs=${ids}`);
+                }}
+                title={multiBenchmark ? 'Select runs from a single benchmark to compare' : selectedRuns.size < 2 ? 'Select 2+ runs to compare' : `Compare ${selectedRuns.size} runs`}
+              >
+                <GitCompare size={12} />
+                Compare ({selectedRuns.size})
+                {multiBenchmark && <span className="text-amber-500 text-[9px]">⚠</span>}
+              </Button>
+            );
+          })()}
         </div>
       </div>
 
@@ -481,54 +506,6 @@ export const EvalRunsPage: React.FC = () => {
           </tbody>
         </table>
       </div>
-
-      {/* ── Floating Compare Bar ───────────────────────────────────── */}
-      {selectedRuns.size >= 2 && (() => {
-        const selectedRows = allRunRows.filter(rr => selectedRuns.has(rr.run.id));
-        const benchmarkIds = new Set(selectedRows.map(rr => rr.benchmarkId));
-        const multiBenchmark = benchmarkIds.size > 1;
-        return (
-        <div className="sticky bottom-0 left-0 right-0 border-t bg-card/95 backdrop-blur-sm px-4 py-2.5 flex items-center justify-between z-20 shadow-[0_-2px_8px_rgba(0,0,0,0.1)]">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Badge variant="secondary" className="text-[10px] font-semibold">{selectedRuns.size}</Badge>
-            <span>runs selected{atLimit ? ' (max 10)' : ''}</span>
-            {multiBenchmark && (
-              <span className="text-amber-600 dark:text-amber-400 text-[10px]">· {benchmarkIds.size} benchmarks — compare works per benchmark</span>
-            )}
-            <button
-              className="text-[10px] text-muted-foreground hover:text-foreground underline ml-1"
-              onClick={() => setSelectedRuns(new Set())}
-            >
-              Clear
-            </button>
-          </div>
-          <Button
-            size="sm"
-            className="h-7 px-4 text-xs gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90"
-            onClick={() => {
-              // Find the benchmark(s) for selected runs
-              const selectedRows = allRunRows.filter(rr => selectedRuns.has(rr.run.id));
-              const benchmarkIds = new Set(selectedRows.map(rr => rr.benchmarkId));
-              const ids = selectedRows.map(rr => rr.run.id).join(',');
-
-              if (benchmarkIds.size === 1) {
-                // All from same benchmark — use existing compare page
-                const bmId = [...benchmarkIds][0];
-                navigate(`/compare/${bmId}?runs=${ids}`);
-              } else {
-                // Multiple benchmarks — navigate to first benchmark's compare with all run IDs
-                // ComparisonPage will filter to valid runs for that benchmark
-                const bmId = [...benchmarkIds][0];
-                navigate(`/compare/${bmId}?runs=${ids}`);
-              }
-            }}
-          >
-            <BarChart3 size={12} />
-            Compare {selectedRuns.size} Runs
-          </Button>
-        </div>
-        );
-      })()}
     </div>
   );
 };
