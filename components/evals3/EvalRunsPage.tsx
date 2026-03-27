@@ -440,15 +440,15 @@ export const EvalRunsPage: React.FC = () => {
         </div>
         <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
           <CheckCircle2 size={16} className="text-green-500" />
-          <div><div className="text-lg font-semibold leading-tight">{overallPassRate}%</div><div className="text-[11px] text-muted-foreground">Overall Pass Rate</div></div>
+          <div><div className="text-lg font-semibold leading-tight">{overallPassRate}%</div><div className="text-[11px] text-muted-foreground border-b border-dotted border-muted-foreground/50 cursor-help inline-block" title="Total passed test cases ÷ total test cases across all runs in this time range">Overall Pass Rate</div></div>
         </div>
         <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
           <Target size={16} className="text-purple-500" />
-          <div><div className="text-lg font-semibold leading-tight">{avgAccuracy}%</div><div className="text-[11px] text-muted-foreground">Avg Accuracy</div></div>
+          <div><div className="text-lg font-semibold leading-tight">{avgAccuracy}%</div><div className="text-[11px] text-muted-foreground border-b border-dotted border-muted-foreground/50 cursor-help inline-block" title="Average pass rate per run, weighted equally — measures how well agents perform across all evaluation runs">Avg Accuracy</div></div>
         </div>
         <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
           <TrendingDown size={16} className={regressionCountReal > 0 ? 'text-red-500' : 'text-green-500'} />
-          <div><div className={`text-lg font-semibold leading-tight ${regressionCountReal > 0 ? 'text-red-500' : 'text-green-500'}`}>{regressionCountReal}</div><div className="text-[11px] text-muted-foreground">Regressions</div></div>
+          <div><div className={`text-lg font-semibold leading-tight ${regressionCountReal > 0 ? 'text-red-500' : 'text-green-500'}`}>{regressionCountReal}</div><div className="text-[11px] text-muted-foreground border-b border-dotted border-muted-foreground/50 cursor-help inline-block" title="Benchmarks where the latest run's pass rate dropped compared to the previous run — indicates quality degradation">Regressions</div></div>
         </div>
       </div>
 
