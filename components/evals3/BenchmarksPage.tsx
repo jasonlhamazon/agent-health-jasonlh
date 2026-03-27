@@ -130,7 +130,6 @@ export const BenchmarksPage4: React.FC = () => {
   const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [activeTab, setActiveTab] = useState<string>('benchmarks');
   const [timeRange, setTimeRange] = useState<TimeRange>('all');
   const [selectedAgent, setSelectedAgent] = useState<string>('all');
   const [isScrolled, setIsScrolled] = useState(false);
@@ -411,15 +410,8 @@ export const BenchmarksPage4: React.FC = () => {
         </div>
       </div>
 
-      {/* ── Tabs ───────────────────────────────────────────────────── */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
-        <TabsList className="mb-3 self-start">
-          <TabsTrigger value="benchmarks" className="text-xs">Benchmarks</TabsTrigger>
-          <TabsTrigger value="runs" className="text-xs">Runs</TabsTrigger>
-        </TabsList>
-
-        {/* ── Tab 1: Benchmarks Leaderboard ──────────────────────── */}
-        <TabsContent value="benchmarks" className="flex-1 overflow-hidden mt-0">
+      {/* ── Benchmarks Table ──────────────────────────────────────── */}
+      <div className="flex-1 overflow-hidden">
           <div ref={scrollRef} className="h-full overflow-y-auto rounded-lg border border-border">
             <table className="w-full caption-bottom text-sm">
               <thead className={`sticky top-0 z-10 bg-background transition-shadow duration-200 ${isScrolled ? 'shadow-sm' : ''}`}>
@@ -476,72 +468,7 @@ export const BenchmarksPage4: React.FC = () => {
               </tbody>
             </table>
           </div>
-        </TabsContent>
-
-
-        {/* ── Tab 2: Flattened test case results ─────────────────────── */}
-        <TabsContent value="runs" className="flex-1 overflow-hidden mt-0">
-          <div className="grid grid-cols-3 gap-3 mb-4">
-            <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
-              <Activity size={16} className="text-purple-500" />
-              <div><div className="text-lg font-semibold leading-tight">{totalResults}</div><div className="text-[11px] text-muted-foreground">Test Case Results</div></div>
-            </div>
-            <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
-              <CheckCircle2 size={16} className="text-green-500" />
-              <div><div className="text-lg font-semibold leading-tight">{passedResults} / {totalResults}</div><div className="text-[11px] text-muted-foreground">Passed</div></div>
-            </div>
-            <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
-              <BarChart3 size={16} className="text-blue-500" />
-              <div><div className="text-lg font-semibold leading-tight">{resultsPassRate}%</div><div className="text-[11px] text-muted-foreground">Pass Rate</div></div>
-            </div>
-          </div>
-          <div className="flex-1 overflow-y-auto rounded-lg border border-border">
-            <table className="w-full caption-bottom text-sm">
-              <thead className="sticky top-0 z-10 bg-background">
-                <tr className="border-b">
-                  <th className="h-8 w-8 px-2 align-middle bg-background border-b" />
-                  <SortHeader label="Test Case" active={runSort.field === 'testCase'} dir={runSort.dir} onClick={() => handleRunSort('testCase')} />
-                  <SortHeader label="Benchmark" active={runSort.field === 'benchmark'} dir={runSort.dir} onClick={() => handleRunSort('benchmark')} />
-                  <SortHeader label="Run" active={runSort.field === 'run'} dir={runSort.dir} onClick={() => handleRunSort('run')} />
-                  <SortHeader label="Agent" active={runSort.field === 'agent'} dir={runSort.dir} onClick={() => handleRunSort('agent')} />
-                  <SortHeader label="Timestamp" active={runSort.field === 'timestamp'} dir={runSort.dir} onClick={() => handleRunSort('timestamp')} />
-                  <SortHeader label="Result" active={runSort.field === 'result'} dir={runSort.dir} onClick={() => handleRunSort('result')} className="text-right" />
-                </tr>
-              </thead>
-              <tbody className="[&_tr:last-child]:border-0">
-                {sortedResults.length === 0 ? (
-                  <tr><td colSpan={7} className="py-16 text-center text-sm text-muted-foreground">
-                    {timeRange === 'all' ? 'No results' : `No results in ${TIME_OPTIONS.find(o => o.value === timeRange)?.label}`}
-                  </td></tr>
-                ) : (
-                  sortedResults.map(r => (
-                    <tr key={`${r.benchmarkId}-${r.runId}-${r.testCaseId}`}
-                      className="border-b hover:bg-muted/50 cursor-pointer transition-colors"
-                      onClick={() => r.reportId && navigate(`/runs/${r.reportId}`)}>
-                      <td className="px-2 py-2.5 align-middle text-center">
-                        {r.passed === true && <CheckCircle2 size={13} className="text-green-500" />}
-                        {r.passed === false && <XCircle size={13} className="text-red-500" />}
-                        {r.passed === null && r.resultStatus === 'running' && <Loader2 size={13} className="text-blue-600 dark:text-blue-400 animate-spin" />}
-                        {r.passed === null && r.resultStatus !== 'running' && <Clock size={13} className="text-muted-foreground" />}
-                      </td>
-                      <td className="px-3 py-2.5 align-middle"><div className="text-sm font-medium truncate max-w-[200px]">{r.testCaseName}</div></td>
-                      <td className="px-3 py-2.5 align-middle text-[11px] text-muted-foreground truncate max-w-[160px]">{r.benchmarkName}</td>
-                      <td className="px-3 py-2.5 align-middle text-[11px] text-muted-foreground truncate max-w-[120px]">{r.runName}</td>
-                      <td className="px-3 py-2.5 align-middle text-xs truncate max-w-[100px]">{r.agentName}</td>
-                      <td className="px-3 py-2.5 align-middle text-[11px] text-muted-foreground whitespace-nowrap">{formatRelativeTime(r.runCreatedAt)}</td>
-                      <td className="px-3 py-2.5 align-middle text-right">
-                        {r.passed === true && <span className="text-[11px] font-semibold text-green-500">PASS</span>}
-                        {r.passed === false && <span className="text-[11px] font-semibold text-red-500">FAIL</span>}
-                        {r.passed === null && <span className="text-[11px] text-muted-foreground">{r.resultStatus === 'running' ? 'RUNNING' : '—'}</span>}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </TabsContent>
-      </Tabs>
+        </div>
 
       {/* Benchmark Editor Modal */}
       {showEditor && (
