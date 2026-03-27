@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { asyncBenchmarkStorage, asyncTestCaseStorage } from '@/services/storage';
 import { Benchmark, TestCase, BenchmarkRun } from '@/types';
 import { DEFAULT_CONFIG } from '@/lib/constants';
@@ -107,6 +108,7 @@ export const EvalRunsPage: React.FC = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('flat');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [sort, setSort] = useState<{ field: string; dir: 'asc' | 'desc' }>({ field: 'timestamp', dir: 'desc' });
+  const [showRegressionsOnly, setShowRegressionsOnly] = useState(false);
 
   // Scroll
   const [isScrolled, setIsScrolled] = useState(false);
@@ -273,8 +275,8 @@ export const EvalRunsPage: React.FC = () => {
   }, [allRunRows]);
 
   // Regressions — count benchmarks where latest run is worse than previous
-  const regressionCountReal = useMemo(() => {
-    let count = 0;
+  const regressionData = useMemo(() => {
+    const regressionRunIds = new Set<string>();
     for (const group of groupedByBenchmark) {
       if (group.rows.length < 2) continue;
       const sorted = [...group.rows].sort((a, b) => new Date(b.run.createdAt).getTime() - new Date(a.run.createdAt).getTime());
@@ -282,10 +284,11 @@ export const EvalRunsPage: React.FC = () => {
       const previous = sorted[1];
       const latestRate = latest.total > 0 ? latest.passed / latest.total : 0;
       const prevRate = previous.total > 0 ? previous.passed / previous.total : 0;
-      if (latestRate < prevRate) count++;
+      if (latestRate < prevRate) regressionRunIds.add(latest.run.id);
     }
-    return count;
+    return { count: regressionRunIds.size, runIds: regressionRunIds };
   }, [groupedByBenchmark]);
+  const regressionCountReal = regressionData.count;
 
   // Render a run row
   const renderRunRow = (rr: RunRow, showBenchmark: boolean) => {
@@ -433,6 +436,7 @@ export const EvalRunsPage: React.FC = () => {
       )}
 
       {/* ── Summary Cards ──────────────────────────────────────────── */}
+      <TooltipProvider delayDuration={200}>
       <div className="grid grid-cols-4 gap-3 mb-4">
         <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
           <Activity size={16} className="text-blue-500" />
@@ -440,17 +444,58 @@ export const EvalRunsPage: React.FC = () => {
         </div>
         <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
           <CheckCircle2 size={16} className="text-green-500" />
-          <div><div className="text-lg font-semibold leading-tight">{overallPassRate}%</div><div className="text-[11px] text-muted-foreground border-b border-dotted border-muted-foreground/50 cursor-help inline-block" title="Total passed test cases ÷ total test cases across all runs in this time range">Overall Pass Rate</div></div>
+          <div>
+            <div className="text-lg font-semibold leading-tight">{overallPassRate}%</div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="text-[11px] text-muted-foreground border-b border-dotted border-muted-foreground/50 cursor-help">Overall Pass Rate</span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[220px] text-xs">
+                Total passed test cases ÷ total test cases across all runs in this time range ({totalPassed}/{totalTestCases})
+              </TooltipContent>
+            </Tooltip>
+          </div>
         </div>
         <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
           <Target size={16} className="text-purple-500" />
-          <div><div className="text-lg font-semibold leading-tight">{avgAccuracy}%</div><div className="text-[11px] text-muted-foreground border-b border-dotted border-muted-foreground/50 cursor-help inline-block" title="Average pass rate per run, weighted equally — measures how well agents perform across all evaluation runs">Avg Accuracy</div></div>
+          <div>
+            <div className="text-lg font-semibold leading-tight">{avgAccuracy}%</div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="text-[11px] text-muted-foreground border-b border-dotted border-muted-foreground/50 cursor-help">Avg Accuracy</span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[220px] text-xs">
+                Average pass rate per run — measures how well agents perform across all evaluation runs
+              </TooltipContent>
+            </Tooltip>
+          </div>
         </div>
-        <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
+        <div
+          className={`flex items-center gap-3 px-4 py-3 rounded-lg border bg-card transition-colors ${
+            showRegressionsOnly ? 'border-red-500/50 bg-red-500/5' : 'border-border'
+          } ${regressionCountReal > 0 ? 'cursor-pointer hover:border-red-500/30' : ''}`}
+          onClick={() => regressionCountReal > 0 && setShowRegressionsOnly(!showRegressionsOnly)}
+        >
           <TrendingDown size={16} className={regressionCountReal > 0 ? 'text-red-500' : 'text-green-500'} />
-          <div><div className={`text-lg font-semibold leading-tight ${regressionCountReal > 0 ? 'text-red-500' : 'text-green-500'}`}>{regressionCountReal}</div><div className="text-[11px] text-muted-foreground border-b border-dotted border-muted-foreground/50 cursor-help inline-block" title="Benchmarks where the latest run's pass rate dropped compared to the previous run — indicates quality degradation">Regressions</div></div>
+          <div>
+            <div className={`text-lg font-semibold leading-tight ${regressionCountReal > 0 ? 'text-red-500' : 'text-green-500'}`}>
+              {regressionCountReal}
+              {showRegressionsOnly && <span className="text-[9px] ml-1 font-normal text-muted-foreground">(filtered)</span>}
+            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="text-[11px] text-muted-foreground border-b border-dotted border-muted-foreground/50 cursor-help">
+                  Regressions
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-[220px] text-xs">
+                Benchmarks where the latest run's pass rate dropped vs. the previous run. {regressionCountReal > 0 ? 'Click to filter.' : ''}
+              </TooltipContent>
+            </Tooltip>
+          </div>
         </div>
       </div>
+      </TooltipProvider>
 
       {/* ── View Toggle ────────────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-3">
@@ -497,7 +542,7 @@ export const EvalRunsPage: React.FC = () => {
                 </td>
               </tr>
             ) : viewMode === 'flat' ? (
-              sortRows(allRunRows).map(rr => renderRunRow(rr, true))
+              sortRows(showRegressionsOnly ? allRunRows.filter(rr => regressionData.runIds.has(rr.run.id)) : allRunRows).map(rr => renderRunRow(rr, true))
             ) : (
               groupedByBenchmark.map(group => {
                 const isCollapsed = collapsedGroups.has(group.id);
