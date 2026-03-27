@@ -17,12 +17,16 @@ import { EvaluationReport, TestCase } from '@/types';
 import { formatDate, getModelName } from '@/lib/utils';
 import { RunDetailsContent } from '../RunDetailsContent';
 
+import { X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+
 type ResultStatus = 'passed' | 'failed' | 'running' | 'pending';
 
 interface TestCaseInspectorPanelProps {
   report: EvaluationReport;
   testCase: TestCase | null;
   status: ResultStatus;
+  onClose?: () => void;
 }
 
 
@@ -30,6 +34,7 @@ export const TestCaseInspectorPanel: React.FC<TestCaseInspectorPanelProps> = ({
   report,
   testCase,
   status,
+  onClose,
 }) => {
   const isPassed = report.passFailStatus === 'passed';
   const accuracy = report.metrics?.accuracy;
@@ -53,6 +58,11 @@ export const TestCaseInspectorPanel: React.FC<TestCaseInspectorPanelProps> = ({
               {isPassed ? 'PASSED' : 'FAILED'}
             </Badge>
           </div>
+          {onClose && (
+            <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground" onClick={onClose} title="Close">
+              <X size={14} />
+            </Button>
+          )}
         </div>
 
         <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">

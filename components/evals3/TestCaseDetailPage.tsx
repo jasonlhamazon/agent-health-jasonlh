@@ -22,8 +22,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Play, Calendar, CheckCircle2, XCircle, Trash2, Pencil,
-  Loader2, ChevronDown, ChevronRight, FileText, Clock, Target,
+  ArrowLeft, Play, Calendar, CheckCircle2, XCircle, Pencil,
+  ChevronDown, ChevronRight, FileText, Target,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -32,7 +32,6 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
 import { asyncTestCaseStorage, asyncRunStorage } from '@/services/storage';
 import { TestCase, EvaluationReport } from '@/types';
-import { DEFAULT_CONFIG } from '@/lib/constants';
 import { getLabelColor, formatDate, formatRelativeTime, getModelName } from '@/lib/utils';
 import { QuickRunModal } from '../QuickRunModal';
 import { TestCaseEditor } from '../TestCaseEditor';
@@ -73,6 +72,7 @@ export const TestCaseDetailPage: React.FC = () => {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [runningTestCase, setRunningTestCase] = useState<TestCase | null>(null);
   const [showEditor, setShowEditor] = useState(false);
+  const initialSelectionDone = React.useRef(false);
 
   const loadData = useCallback(async () => {
     if (!testCaseId) return;
@@ -87,9 +87,10 @@ export const TestCaseDetailPage: React.FC = () => {
       const sorted = reports.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       setRuns(sorted);
       setTotalRuns(total);
-      // Auto-select first run, auto-open definition if no runs
-      if (sorted.length > 0 && !selectedRunId) {
+      // Auto-select first run, auto-open definition if no runs (only on initial load)
+      if (sorted.length > 0 && !initialSelectionDone.current) {
         setSelectedRunId(sorted[0].id);
+        initialSelectionDone.current = true;
       }
       if (sorted.length === 0) {
         setDefinitionOpen(true);
@@ -99,7 +100,7 @@ export const TestCaseDetailPage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [testCaseId, navigate, selectedRunId]);
+  }, [testCaseId, navigate]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -168,6 +169,7 @@ export const TestCaseDetailPage: React.FC = () => {
       </div>
 
       {/* ── Main Content: Left Panel + Right Panel ─────────────────── */}
+      {selectedRunId ? (
       <ResizablePanelGroup direction="horizontal" className="flex-1">
         {/* ── Left Panel ──────────────────────────────────────────── */}
         <ResizablePanel defaultSize={30} minSize={20} maxSize={45} className="border-r">
@@ -220,9 +222,9 @@ export const TestCaseDetailPage: React.FC = () => {
                       <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">Context ({testCase.context.length})</div>
                       <div className="space-y-1">
                         {testCase.context.map((ctx, i) => (
-                          <div key={i} className="bg-muted/30 rounded px-2 py-1 border border-border">
-                            <p className="text-[9px] font-medium text-muted-foreground">{ctx.description}</p>
-                            <pre className="text-[9px] overflow-x-auto max-h-12 overflow-y-auto">{ctx.value.slice(0, 150)}{ctx.value.length > 150 ? '…' : ''}</pre>
+                          <div key={i} className="bg-muted/30 rounded px-2 py-1 border border-border overflow-hidden">
+                            <p className="text-[9px] font-medium text-muted-foreground truncate">{ctx.description}</p>
+                            <pre className="text-[9px] overflow-x-auto max-h-10 overflow-y-auto whitespace-pre-wrap break-all">{ctx.value.slice(0, 100)}{ctx.value.length > 100 ? '…' : ''}</pre>
                           </div>
                         ))}
                       </div>
@@ -257,38 +259,34 @@ export const TestCaseDetailPage: React.FC = () => {
                   return (
                     <div
                       key={run.id}
-                      className={`flex items-center gap-2 px-2.5 py-2 rounded-md cursor-pointer transition-colors ${
+                      className={`flex items-start gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors ${
                         isSelected ? 'bg-primary/10 border border-primary/30' : 'hover:bg-muted/50 border border-transparent'
                       }`}
                       onClick={() => setSelectedRunId(run.id)}
                     >
-                      <div className="shrink-0">
+                      <div className="shrink-0 mt-0.5">
                         {isPassed
-                          ? <CheckCircle2 size={14} className="text-green-500" />
-                          : <XCircle size={14} className="text-red-500" />}
+                          ? <CheckCircle2 size={12} className="text-green-500" />
+                          : <XCircle size={12} className="text-red-500" />}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className={`text-xs font-semibold ${isPassed ? 'text-green-500' : 'text-red-500'}`}>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className={`text-[11px] font-semibold ${isPassed ? 'text-green-500' : 'text-red-500'}`}>
                             {isPassed ? 'PASSED' : 'FAILED'}
                           </span>
                           {isLatest && (
-                            <Badge variant="outline" className="text-[8px] px-1 py-0 bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30">
+                            <Badge variant="outline" className="text-[7px] px-1 py-0 bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30">
                               Latest
                             </Badge>
                           )}
+                          <span className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 ml-auto shrink-0">
+                            {run.metrics?.accuracy ?? '—'}%
+                          </span>
                         </div>
-                        <div className="text-[10px] text-muted-foreground flex items-center gap-1.5 mt-0.5">
-                          <span className="font-mono">{run.id.slice(0, 12)}</span>
-                          <span>·</span>
-                          <span>{formatRelativeTime(run.timestamp)}</span>
-                          <span>·</span>
-                          <span>{getModelName(run.modelName)}</span>
+                        <div className="text-[9px] text-muted-foreground mt-0.5 break-words">
+                          <span className="font-mono">{run.id.slice(0, 10)}</span> · {formatRelativeTime(run.timestamp)} · {getModelName(run.modelName)}
                         </div>
                       </div>
-                      <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 shrink-0">
-                        {run.metrics?.accuracy ?? '—'}%
-                      </span>
                     </div>
                   );
                 })
@@ -306,6 +304,7 @@ export const TestCaseDetailPage: React.FC = () => {
               report={selectedRun}
               testCase={testCase}
               status={getStatus(selectedRun)}
+              onClose={() => setSelectedRunId(null)}
             />
           ) : (
             <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -322,6 +321,68 @@ export const TestCaseDetailPage: React.FC = () => {
           )}
         </ResizablePanel>
       </ResizablePanelGroup>
+      ) : (
+        /* Full-width left panel when no run selected */
+        <div className="flex-1 overflow-hidden">
+          <ScrollArea className="h-full">
+            {/* Definition section — always open when no run selected */}
+            <div className="border-b px-4 py-3 space-y-2.5">
+              <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Definition</div>
+              <div>
+                <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">Input</div>
+                <div className="text-xs bg-muted/40 rounded px-3 py-2 border border-border break-words leading-relaxed">
+                  {testCase.initialPrompt || '—'}
+                </div>
+              </div>
+              {testCase.expectedOutcomes?.length > 0 && (
+                <div>
+                  <div className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider mb-0.5">Expected</div>
+                  <ul className="space-y-1">
+                    {testCase.expectedOutcomes.map((o, i) => (
+                      <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                        <CheckCircle2 size={11} className="text-green-500 mt-0.5 shrink-0" />
+                        <span>{o}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+            {/* Runs list */}
+            <div className="px-4 pt-3 pb-1 flex items-center justify-between">
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Test Case Runs ({filteredRuns.length})</span>
+            </div>
+            <div className="px-4 py-2 space-y-1">
+              {filteredRuns.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                  <FileText size={32} className="mb-3 opacity-20" />
+                  <p className="text-sm">No test case runs yet</p>
+                  <Button size="sm" className="mt-3 bg-opensearch-blue hover:bg-blue-600" onClick={() => setRunningTestCase(testCase)}>
+                    <Play size={12} className="mr-1" /> Run Test
+                  </Button>
+                </div>
+              ) : (
+                filteredRuns.map((run, index) => {
+                  const isPassed = run.passFailStatus === 'passed';
+                  return (
+                    <div
+                      key={run.id}
+                      className="flex items-center gap-3 px-3 py-2 rounded-md cursor-pointer transition-colors hover:bg-muted/50 border border-transparent"
+                      onClick={() => setSelectedRunId(run.id)}
+                    >
+                      {isPassed ? <CheckCircle2 size={14} className="text-green-500 shrink-0" /> : <XCircle size={14} className="text-red-500 shrink-0" />}
+                      <span className={`text-xs font-semibold ${isPassed ? 'text-green-500' : 'text-red-500'}`}>{isPassed ? 'PASSED' : 'FAILED'}</span>
+                      {index === 0 && <Badge variant="outline" className="text-[7px] px-1 py-0 bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/30">Latest</Badge>}
+                      <span className="text-[10px] text-muted-foreground flex-1">{formatRelativeTime(run.timestamp)} · {getModelName(run.modelName)}</span>
+                      <span className="text-xs font-semibold text-blue-600 dark:text-blue-400 shrink-0">{run.metrics?.accuracy ?? '—'}%</span>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </ScrollArea>
+        </div>
+      )}
 
       {/* ── Modals ─────────────────────────────────────────────────── */}
       {runningTestCase && (

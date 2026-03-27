@@ -77,6 +77,7 @@ export const RunInspectorPage: React.FC = () => {
   const [selectedTcId, setSelectedTcId] = useState<string | null>(null);
   const [selectedReport, setSelectedReport] = useState<EvaluationReport | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
+  const initialSelectionDone = React.useRef(false);
 
   // Expanded test cases in left panel (for inline input/expected preview)
   const [expandedTcs, setExpandedTcs] = useState<Set<string>>(new Set());
@@ -111,17 +112,18 @@ export const RunInspectorPage: React.FC = () => {
 
       setResults(resultRows);
 
-      // Auto-select first test case and expand it
-      if (resultRows.length > 0 && !selectedTcId) {
+      // Auto-select first test case and expand it (only on initial load)
+      if (resultRows.length > 0 && !initialSelectionDone.current) {
         setSelectedTcId(resultRows[0].testCaseId);
         setExpandedTcs(new Set([resultRows[0].testCaseId]));
+        initialSelectionDone.current = true;
       }
     } catch (error) {
       console.error('Failed to load:', error);
     } finally {
       setLoading(false);
     }
-  }, [benchmarkId, runId, navigate, selectedTcId]);
+  }, [benchmarkId, runId, navigate]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -215,6 +217,7 @@ export const RunInspectorPage: React.FC = () => {
       </div>
 
       {/* ── Main Content: Left Panel + Right Panel ─────────────────── */}
+      {selectedTcId ? (
       <ResizablePanelGroup direction="horizontal" className="flex-1">
         {/* ── Left Panel: Test Case List ──────────────────────────── */}
         <ResizablePanel defaultSize={35} minSize={25} maxSize={50} className="border-r">
@@ -323,6 +326,7 @@ export const RunInspectorPage: React.FC = () => {
                 report={selectedReport}
                 testCase={selectedResult.testCase}
                 status={selectedResult.status}
+                onClose={() => setSelectedTcId(null)}
               />
             ) : (
               <div className="flex items-center justify-center h-full text-muted-foreground">
@@ -344,6 +348,39 @@ export const RunInspectorPage: React.FC = () => {
           )}
         </ResizablePanel>
       </ResizablePanelGroup>
+      ) : (
+        /* Full-width left panel when nothing selected */
+        <div className="flex-1 overflow-hidden">
+          <ScrollArea className="h-full">
+            <div className="px-3 pt-2 pb-1 border-b">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Test Cases</span>
+                <span className="text-[10px] text-muted-foreground">{results.length}</span>
+              </div>
+            </div>
+            <div className="p-2 space-y-0.5">
+              {results.map(r => {
+                const tc = r.testCase;
+                return (
+                  <div
+                    key={r.testCaseId}
+                    className="flex items-center gap-2 px-2.5 py-2 rounded-md cursor-pointer transition-colors hover:bg-muted/50 border border-transparent"
+                    onClick={() => setSelectedTcId(r.testCaseId)}
+                  >
+                    <StatusIcon status={r.status} size={14} />
+                    <span className="text-xs font-medium flex-1 min-w-0 truncate">{tc?.name || r.testCaseId}</span>
+                    <span className={`text-[10px] font-semibold shrink-0 ${
+                      r.status === 'passed' ? 'text-green-500' : r.status === 'failed' ? 'text-red-500' : 'text-muted-foreground'
+                    }`}>
+                      {r.status === 'passed' ? 'PASS' : r.status === 'failed' ? 'FAIL' : r.status.toUpperCase()}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </ScrollArea>
+        </div>
+      )}
     </div>
   );
 };
