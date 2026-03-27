@@ -14,13 +14,14 @@ import { useNavigate } from 'react-router-dom';
 import {
   CheckCircle2, XCircle, Loader2, Clock, Search, RefreshCw,
   Activity, BarChart3, SlidersHorizontal, ChevronDown, ChevronRight,
-  Layers, List, GitCompare, AlertTriangle, TrendingDown, Target,
+  Layers, List, GitCompare, AlertTriangle, TrendingDown, Target, X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { asyncBenchmarkStorage, asyncTestCaseStorage } from '@/services/storage';
 import { Benchmark, TestCase, BenchmarkRun } from '@/types';
 import { DEFAULT_CONFIG } from '@/lib/constants';
@@ -110,6 +111,14 @@ export const EvalRunsPage: React.FC = () => {
   const [sort, setSort] = useState<{ field: string; dir: 'asc' | 'desc' }>({ field: 'timestamp', dir: 'desc' });
   const [showRegressionsOnly, setShowRegressionsOnly] = useState(false);
 
+  // Advanced filters
+  const [filterStatus, setFilterStatus] = useState<'all' | 'passed' | 'failed' | 'mixed'>('all');
+  const [filterBenchmarks, setFilterBenchmarks] = useState<Set<string>>(new Set());
+  const [filterModels, setFilterModels] = useState<Set<string>>(new Set());
+  const [filterPassRateMin, setFilterPassRateMin] = useState<number>(0);
+  const [filterPassRateMax, setFilterPassRateMax] = useState<number>(100);
+  const [filterOpen, setFilterOpen] = useState(false);
+
   // Scroll
   const [isScrolled, setIsScrolled] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -181,16 +190,79 @@ export const EvalRunsPage: React.FC = () => {
     return rows;
   }, [benchmarks, timeRange, selectedAgent, search]);
 
-  // Summary metrics
-  const totalRuns = allRunRows.length;
-  const totalTestCases = allRunRows.reduce((sum, r) => sum + r.total, 0);
-  const totalPassed = allRunRows.reduce((sum, r) => sum + r.passed, 0);
+  // Available filter options (derived from data)
+  const availableBenchmarks = useMemo(() => {
+    const bms = new Map<string, string>();
+    for (const rr of allRunRows) bms.set(rr.benchmarkId, rr.benchmarkName);
+    return Array.from(bms.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [allRunRows]);
+
+  const availableModels = useMemo(() => {
+    const models = new Set<string>();
+    for (const rr of allRunRows) models.add(getModelName(rr.run.modelId));
+    return Array.from(models).sort();
+  }, [allRunRows]);
+
+  // Apply advanced filters
+  const filteredRunRows = useMemo(() => {
+    let rows = allRunRows;
+
+    // Status filter
+    if (filterStatus !== 'all') {
+      rows = rows.filter(rr => {
+        const allPassed = rr.failed === 0 && rr.passed > 0;
+        const allFailed = rr.passed === 0 && rr.failed > 0;
+        if (filterStatus === 'passed') return allPassed;
+        if (filterStatus === 'failed') return rr.failed > 0;
+        if (filterStatus === 'mixed') return rr.passed > 0 && rr.failed > 0;
+        return true;
+      });
+    }
+
+    // Benchmark filter
+    if (filterBenchmarks.size > 0) {
+      rows = rows.filter(rr => filterBenchmarks.has(rr.benchmarkId));
+    }
+
+    // Model filter
+    if (filterModels.size > 0) {
+      rows = rows.filter(rr => filterModels.has(getModelName(rr.run.modelId)));
+    }
+
+    // Pass rate range
+    if (filterPassRateMin > 0 || filterPassRateMax < 100) {
+      rows = rows.filter(rr => {
+        const rate = rr.total > 0 ? Math.round((rr.passed / rr.total) * 100) : 0;
+        return rate >= filterPassRateMin && rate <= filterPassRateMax;
+      });
+    }
+
+    // Regression filter applied separately in table rendering
+
+    return rows;
+  }, [allRunRows, filterStatus, filterBenchmarks, filterModels, filterPassRateMin, filterPassRateMax]);
+
+  const activeFilterCount = (filterStatus !== 'all' ? 1 : 0) + (filterBenchmarks.size > 0 ? 1 : 0) + (filterModels.size > 0 ? 1 : 0) + ((filterPassRateMin > 0 || filterPassRateMax < 100) ? 1 : 0);
+
+  const clearAllFilters = () => {
+    setFilterStatus('all');
+    setFilterBenchmarks(new Set());
+    setFilterModels(new Set());
+    setFilterPassRateMin(0);
+    setFilterPassRateMax(100);
+    setShowRegressionsOnly(false);
+  };
+
+  // Summary metrics (use filteredRunRows for display)
+  const totalRuns = filteredRunRows.length;
+  const totalTestCases = filteredRunRows.reduce((sum, r) => sum + r.total, 0);
+  const totalPassed = filteredRunRows.reduce((sum, r) => sum + r.passed, 0);
   const overallPassRate = totalTestCases > 0 ? Math.round((totalPassed / totalTestCases) * 100) : 0;
 
   // Avg accuracy — placeholder (would need report-level accuracy data)
   // For now, compute from pass rate per run as a proxy
   const avgAccuracy = totalRuns > 0
-    ? Math.round(allRunRows.reduce((sum, r) => sum + (r.total > 0 ? (r.passed / r.total) * 100 : 0), 0) / totalRuns)
+    ? Math.round(filteredRunRows.reduce((sum, r) => sum + (r.total > 0 ? (r.passed / r.total) * 100 : 0), 0) / totalRuns)
     : 0;
 
   // Regressions — computed after groupedByBenchmark
@@ -375,9 +447,108 @@ export const EvalRunsPage: React.FC = () => {
             <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input placeholder="Search runs..." value={search} onChange={e => setSearch(e.target.value)} className="pl-7 h-7 text-xs md:text-xs" />
           </div>
-          <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs font-normal">
-            <SlidersHorizontal size={12} /> Filter
-          </Button>
+          <Popover open={filterOpen} onOpenChange={setFilterOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className={`h-7 gap-1.5 text-xs font-normal ${activeFilterCount > 0 ? 'border-primary/50 text-foreground' : ''}`}>
+                <SlidersHorizontal size={12} /> Filter{activeFilterCount > 0 && ` (${activeFilterCount})`}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 p-3" align="start">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold">Filters</span>
+                  {activeFilterCount > 0 && (
+                    <button className="text-[10px] text-muted-foreground hover:text-foreground underline" onClick={clearAllFilters}>Clear all</button>
+                  )}
+                </div>
+
+                {/* Status */}
+                <div>
+                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1 block">Status</label>
+                  <div className="flex gap-1 flex-wrap">
+                    {(['all', 'passed', 'failed', 'mixed'] as const).map(s => (
+                      <button
+                        key={s}
+                        onClick={() => setFilterStatus(s)}
+                        className={`px-2 py-1 text-[10px] rounded-md border transition-colors ${
+                          filterStatus === s ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'
+                        }`}
+                      >
+                        {s === 'all' ? 'All' : s === 'passed' ? '✓ Passed' : s === 'failed' ? '✗ Failed' : '◐ Mixed'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Benchmark */}
+                <div>
+                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1 block">Benchmark</label>
+                  <div className="max-h-24 overflow-y-auto space-y-0.5">
+                    {availableBenchmarks.map(bm => (
+                      <label key={bm.id} className="flex items-center gap-1.5 text-[11px] cursor-pointer hover:bg-muted/50 px-1 py-0.5 rounded">
+                        <input
+                          type="checkbox"
+                          checked={filterBenchmarks.has(bm.id)}
+                          onChange={() => {
+                            setFilterBenchmarks(prev => {
+                              const n = new Set(prev);
+                              n.has(bm.id) ? n.delete(bm.id) : n.add(bm.id);
+                              return n;
+                            });
+                          }}
+                          className="h-3 w-3 rounded"
+                        />
+                        <span className="truncate">{bm.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Model */}
+                <div>
+                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1 block">Model</label>
+                  <div className="max-h-24 overflow-y-auto space-y-0.5">
+                    {availableModels.map(model => (
+                      <label key={model} className="flex items-center gap-1.5 text-[11px] cursor-pointer hover:bg-muted/50 px-1 py-0.5 rounded">
+                        <input
+                          type="checkbox"
+                          checked={filterModels.has(model)}
+                          onChange={() => {
+                            setFilterModels(prev => {
+                              const n = new Set(prev);
+                              n.has(model) ? n.delete(model) : n.add(model);
+                              return n;
+                            });
+                          }}
+                          className="h-3 w-3 rounded"
+                        />
+                        <span className="truncate">{model}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Pass Rate Range */}
+                <div>
+                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1 block">Pass Rate Range</label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number" min={0} max={100} value={filterPassRateMin}
+                      onChange={e => setFilterPassRateMin(Math.max(0, Math.min(100, Number(e.target.value))))}
+                      className="h-6 w-16 text-[10px] text-center"
+                    />
+                    <span className="text-[10px] text-muted-foreground">to</span>
+                    <Input
+                      type="number" min={0} max={100} value={filterPassRateMax}
+                      onChange={e => setFilterPassRateMax(Math.max(0, Math.min(100, Number(e.target.value))))}
+                      className="h-6 w-16 text-[10px] text-center"
+                    />
+                    <span className="text-[10px] text-muted-foreground">%</span>
+                  </div>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
           <Select value={selectedAgent} onValueChange={setSelectedAgent}>
             <SelectTrigger className="w-[120px] h-7 text-xs"><SelectValue /></SelectTrigger>
             <SelectContent>
@@ -432,6 +603,38 @@ export const EvalRunsPage: React.FC = () => {
           >
             Clear selection
           </button>
+        </div>
+      )}
+
+      {/* ── Active Filter Pills ──────────────────────────────────── */}
+      {activeFilterCount > 0 && (
+        <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+          <span className="text-[10px] text-muted-foreground">Active filters:</span>
+          {filterStatus !== 'all' && (
+            <Badge variant="secondary" className="text-[9px] gap-1 px-1.5 py-0">
+              Status: {filterStatus}
+              <button onClick={() => setFilterStatus('all')} className="hover:text-foreground"><X size={10} /></button>
+            </Badge>
+          )}
+          {filterBenchmarks.size > 0 && (
+            <Badge variant="secondary" className="text-[9px] gap-1 px-1.5 py-0">
+              {filterBenchmarks.size} benchmark{filterBenchmarks.size > 1 ? 's' : ''}
+              <button onClick={() => setFilterBenchmarks(new Set())} className="hover:text-foreground"><X size={10} /></button>
+            </Badge>
+          )}
+          {filterModels.size > 0 && (
+            <Badge variant="secondary" className="text-[9px] gap-1 px-1.5 py-0">
+              {filterModels.size} model{filterModels.size > 1 ? 's' : ''}
+              <button onClick={() => setFilterModels(new Set())} className="hover:text-foreground"><X size={10} /></button>
+            </Badge>
+          )}
+          {(filterPassRateMin > 0 || filterPassRateMax < 100) && (
+            <Badge variant="secondary" className="text-[9px] gap-1 px-1.5 py-0">
+              Pass rate: {filterPassRateMin}–{filterPassRateMax}%
+              <button onClick={() => { setFilterPassRateMin(0); setFilterPassRateMax(100); }} className="hover:text-foreground"><X size={10} /></button>
+            </Badge>
+          )}
+          <button className="text-[9px] text-muted-foreground hover:text-foreground underline ml-1" onClick={clearAllFilters}>Clear all</button>
         </div>
       )}
 
@@ -535,14 +738,14 @@ export const EvalRunsPage: React.FC = () => {
             </tr>
           </thead>
           <tbody className="[&_tr:last-child]:border-0">
-            {allRunRows.length === 0 ? (
+            {filteredRunRows.length === 0 ? (
               <tr>
                 <td colSpan={viewMode === 'flat' ? 9 : 8} className="py-16 text-center text-sm text-muted-foreground">
-                  {timeRange === 'all' ? 'No evaluation runs found' : `No runs in ${TIME_OPTIONS.find(o => o.value === timeRange)?.label}`}
+                  {activeFilterCount > 0 ? 'No runs match the current filters' : timeRange === 'all' ? 'No evaluation runs found' : `No runs in ${TIME_OPTIONS.find(o => o.value === timeRange)?.label}`}
                 </td>
               </tr>
             ) : viewMode === 'flat' ? (
-              sortRows(showRegressionsOnly ? allRunRows.filter(rr => regressionData.runIds.has(rr.run.id)) : allRunRows).map(rr => renderRunRow(rr, true))
+              sortRows(showRegressionsOnly ? filteredRunRows.filter(rr => regressionData.runIds.has(rr.run.id)) : filteredRunRows).map(rr => renderRunRow(rr, true))
             ) : (
               groupedByBenchmark.map(group => {
                 const isCollapsed = collapsedGroups.has(group.id);
