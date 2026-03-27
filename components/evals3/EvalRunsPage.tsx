@@ -14,7 +14,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   CheckCircle2, XCircle, Loader2, Clock, Search, RefreshCw,
   Activity, BarChart3, SlidersHorizontal, ChevronDown, ChevronRight,
-  Layers, List, GitCompare, AlertTriangle,
+  Layers, List, GitCompare, AlertTriangle, TrendingDown, Target,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -179,9 +179,20 @@ export const EvalRunsPage: React.FC = () => {
     return rows;
   }, [benchmarks, timeRange, selectedAgent, search]);
 
-  // Summary
+  // Summary metrics
   const totalRuns = allRunRows.length;
-  const passedRuns = allRunRows.filter(r => r.failed === 0 && r.passed > 0).length;
+  const totalTestCases = allRunRows.reduce((sum, r) => sum + r.total, 0);
+  const totalPassed = allRunRows.reduce((sum, r) => sum + r.passed, 0);
+  const overallPassRate = totalTestCases > 0 ? Math.round((totalPassed / totalTestCases) * 100) : 0;
+
+  // Avg accuracy — placeholder (would need report-level accuracy data)
+  // For now, compute from pass rate per run as a proxy
+  const avgAccuracy = totalRuns > 0
+    ? Math.round(allRunRows.reduce((sum, r) => sum + (r.total > 0 ? (r.passed / r.total) * 100 : 0), 0) / totalRuns)
+    : 0;
+
+  // Regressions — computed after groupedByBenchmark
+  const regressionCount = 0; // placeholder, computed below
 
   // Sort
   const sortRows = useCallback((rows: RunRow[]) => {
@@ -260,6 +271,21 @@ export const EvalRunsPage: React.FC = () => {
     }
     return Array.from(groups.values()).sort((a, b) => a.name.localeCompare(b.name));
   }, [allRunRows]);
+
+  // Regressions — count benchmarks where latest run is worse than previous
+  const regressionCountReal = useMemo(() => {
+    let count = 0;
+    for (const group of groupedByBenchmark) {
+      if (group.rows.length < 2) continue;
+      const sorted = [...group.rows].sort((a, b) => new Date(b.run.createdAt).getTime() - new Date(a.run.createdAt).getTime());
+      const latest = sorted[0];
+      const previous = sorted[1];
+      const latestRate = latest.total > 0 ? latest.passed / latest.total : 0;
+      const prevRate = previous.total > 0 ? previous.passed / previous.total : 0;
+      if (latestRate < prevRate) count++;
+    }
+    return count;
+  }, [groupedByBenchmark]);
 
   // Render a run row
   const renderRunRow = (rr: RunRow, showBenchmark: boolean) => {
@@ -407,18 +433,22 @@ export const EvalRunsPage: React.FC = () => {
       )}
 
       {/* ── Summary Cards ──────────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-3 mb-4">
+      <div className="grid grid-cols-4 gap-3 mb-4">
         <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
           <Activity size={16} className="text-blue-500" />
-          <div><div className="text-lg font-semibold leading-tight">{totalRuns}</div><div className="text-[11px] text-muted-foreground">Benchmark Runs</div></div>
+          <div><div className="text-lg font-semibold leading-tight">{totalRuns}</div><div className="text-[11px] text-muted-foreground">Evaluation Runs</div></div>
         </div>
         <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
           <CheckCircle2 size={16} className="text-green-500" />
-          <div><div className="text-lg font-semibold leading-tight">{passedRuns}</div><div className="text-[11px] text-muted-foreground">Runs ≥80%</div></div>
+          <div><div className="text-lg font-semibold leading-tight">{overallPassRate}%</div><div className="text-[11px] text-muted-foreground">Overall Pass Rate</div></div>
         </div>
         <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
-          <BarChart3 size={16} className="text-purple-500" />
-          <div><div className="text-lg font-semibold leading-tight">{passedRuns}</div><div className="text-[11px] text-muted-foreground">All Passed</div></div>
+          <Target size={16} className="text-purple-500" />
+          <div><div className="text-lg font-semibold leading-tight">{avgAccuracy}%</div><div className="text-[11px] text-muted-foreground">Avg Accuracy</div></div>
+        </div>
+        <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card">
+          <TrendingDown size={16} className={regressionCountReal > 0 ? 'text-red-500' : 'text-green-500'} />
+          <div><div className={`text-lg font-semibold leading-tight ${regressionCountReal > 0 ? 'text-red-500' : 'text-green-500'}`}>{regressionCountReal}</div><div className="text-[11px] text-muted-foreground">Regressions</div></div>
         </div>
       </div>
 
