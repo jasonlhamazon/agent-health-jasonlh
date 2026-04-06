@@ -70,8 +70,9 @@
   },
   "dependencies": {
     "@ag-ui/core": "^0.0.41",
+    "@aws-sdk/client-bedrock": "^3.1000.0",
     "@aws-sdk/client-bedrock-runtime": "^3.1000.0",
-    "@aws-sdk/credential-providers": "^3.999.0",
+    "@aws-sdk/credential-providers": "^3.1000.0",
     "@opensearch-project/opensearch": "^3.5.1",
     "@opentelemetry/semantic-conventions": "^1.38.0",
     "@radix-ui/react-alert-dialog": "^1.1.15",
@@ -155,6 +156,6 @@
   },
   "overrides": {
     "minimatch": "^10.2.4",
-    "fast-xml-parser": "5.4.1"
+    "fast-xml-parser": "5.5.6"
   }
 }

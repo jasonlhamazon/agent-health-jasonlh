@@ -13,7 +13,8 @@
 
 import { Router, Request, Response } from 'express';
 import { loadConfigSync } from '@/lib/config/index';
-import type { AgentConfig, ModelConfig, ConnectorProtocol } from '@/types/index.js';
+import type { AgentConfig, ModelConfig } from '@/types/index.js';
+import { VALID_CONNECTOR_TYPES } from '@/lib/constants';
 import { addCustomAgent, removeCustomAgent, getCustomAgents } from '@/server/services/customAgentStore';
 
 const router = Router();
@@ -59,15 +60,6 @@ router.get('/api/agents', (req: Request, res: Response) => {
   }
 });
 
-const VALID_CONNECTOR_TYPES: ConnectorProtocol[] = [
-  'agui-streaming',
-  'rest',
-  'litellm',
-  'subprocess',
-  'claude-code',
-  'mock',
-];
-
 /**
  * POST /api/agents/custom - Add a custom agent endpoint
  *
@@ -107,7 +99,6 @@ router.post('/api/agents/custom', (req: Request, res: Response) => {
       isCustom: true,
       connectorType: connectorType ?? 'agui-streaming',
       useTraces: useTraces === true,
-      models: [],
       headers: {},
     };
 

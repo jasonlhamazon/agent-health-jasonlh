@@ -55,6 +55,8 @@ npm test -- path/to/file.test.ts  # Single test file
 
 **IMPORTANT:** After making code changes, always run `npm run build:all && npm run test:all` to verify the build succeeds and all tests pass. A pre-push hook enforces this automatically.
 
+**NEVER use `git push --no-verify` or `git commit --no-verify`.** The pre-push and pre-commit hooks exist to catch build failures, test regressions, and other issues before they reach CI. If a hook fails, fix the underlying issue instead of bypassing the check. Skipping hooks leads to broken CI pipelines and wasted review cycles.
+
 ### CLI / NPX Package
 ```bash
 npm run build:cli           # Build CLI only
@@ -357,7 +359,7 @@ Agents and models can be configured via `agent-health.config.ts` in the working 
 export default {
   agents: [
     { key: "my-agent", name: "My Agent", endpoint: "http://localhost:3000/agent",
-      connectorType: "agui-streaming", models: ["claude-sonnet-4"] }
+      connectorType: "agui-streaming" }
   ],
   // extends: false,  // Set to use ONLY your agents/models (no built-in defaults)
 };
@@ -464,7 +466,7 @@ Update `lib/constants.ts` → `DEFAULT_CONFIG.models`:
 }
 ```
 
-Then add the model key to the agent's `models` array in the agents config.
+Models are configured globally in `config.models`, not per-agent.
 
 ### Trajectory Step Types
 
@@ -505,7 +507,11 @@ Express server on port 4001 provides:
 - `DEBUG`: Enable verbose debug logging on server startup (`true`/`false`, default: `false`)
 - `LANGGRAPH_ENDPOINT` / `HOLMESGPT_ENDPOINT` / `MLCOMMONS_ENDPOINT`: Agent endpoints
 - `OPENSEARCH_STORAGE_*`: Storage cluster for test cases/benchmarks (features degrade if missing)
+  - Basic auth: `OPENSEARCH_STORAGE_ENDPOINT`, `OPENSEARCH_STORAGE_USERNAME`, `OPENSEARCH_STORAGE_PASSWORD`
+  - AWS SigV4: `OPENSEARCH_STORAGE_AUTH_TYPE=sigv4`, `OPENSEARCH_STORAGE_AWS_REGION`, `OPENSEARCH_STORAGE_AWS_PROFILE` (optional), `OPENSEARCH_STORAGE_AWS_SERVICE` (`es` or `aoss`)
 - `OPENSEARCH_LOGS_*`: Logs cluster for agent execution logs (features degrade if missing)
+  - Basic auth: `OPENSEARCH_LOGS_ENDPOINT`, `OPENSEARCH_LOGS_USERNAME`, `OPENSEARCH_LOGS_PASSWORD`
+  - AWS SigV4: `OPENSEARCH_LOGS_AUTH_TYPE=sigv4`, `OPENSEARCH_LOGS_AWS_REGION`, `OPENSEARCH_LOGS_AWS_PROFILE` (optional), `OPENSEARCH_LOGS_AWS_SERVICE` (`es` or `aoss`)
 - `MLCOMMONS_HEADER_*`: Headers for ML-Commons agent data source access (see [docs/ML-COMMONS-SETUP.md](docs/ML-COMMONS-SETUP.md))
 
 ### Data Model
