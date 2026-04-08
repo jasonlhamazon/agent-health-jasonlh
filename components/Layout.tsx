@@ -278,6 +278,66 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                   </SidebarMenuItem>
                 )}
 
+                {/* Evaluations (evals3) collapsible section */}
+                {!isCollapsed && (
+                  <Collapsible defaultOpen={true}>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        asChild
+                        tooltip="Evaluations"
+                        isActive={location.pathname.startsWith("/evals3")}
+                        className="h-9 w-full"
+                      >
+                        <div className="flex items-center w-full">
+                          <Link to="/evaluations/benchmarks" className="flex items-center gap-2 flex-1 min-w-0">
+                            <Gauge className="h-3.5 w-3.5" />
+                            <span className="text-xs">Evaluations</span>
+                          </Link>
+                          <CollapsibleTrigger asChild>
+                            <button
+                              onClick={(e) => e.stopPropagation()}
+                              className="p-0.5 rounded hover:bg-muted-foreground/20 transition-colors ml-auto"
+                              aria-label="Toggle evaluations submenu"
+                            >
+                              <ChevronDown className="h-3.5 w-3.5 transition-transform duration-200" />
+                            </button>
+                          </CollapsibleTrigger>
+                        </div>
+                      </SidebarMenuButton>
+                      <CollapsibleContent>
+                        <SidebarMenuSub className="ml-4 mt-1 space-y-1">
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton asChild isActive={location.pathname === "/evaluations/benchmarks" || (location.pathname.startsWith("/evaluations/benchmarks/") && !/\/evals3\/benchmarks\/[^/]+\/runs\/[^/]+/.test(location.pathname))} data-testid="nav-evals3-benchmarks" className="h-8">
+                              <Link to="/evaluations/benchmarks" className="text-xs">Benchmarks</Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton asChild isActive={location.pathname.startsWith("/evaluations/test-cases")} data-testid="nav-evals3-test-cases" className="h-8">
+                              <Link to="/evaluations/test-cases" className="text-xs">Test Cases</Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton asChild isActive={location.pathname === "/evaluations/runs" || /\/evals3\/benchmarks\/[^/]+\/runs\/[^/]+/.test(location.pathname)} data-testid="nav-evals3-runs" className="h-8">
+                              <Link to="/evaluations/runs" className="text-xs">Evaluation Runs</Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        </SidebarMenuSub>
+                      </CollapsibleContent>
+                    </SidebarMenuItem>
+                  </Collapsible>
+                )}
+
+                {/* Evaluations icon only when collapsed */}
+                {isCollapsed && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location.pathname.startsWith("/evals3")} tooltip="Evaluations" data-testid="nav-evals3" className="h-9">
+                      <Link to="/evaluations/benchmarks" className="justify-center">
+                        <Gauge className="h-4 w-4" />
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
+
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild
