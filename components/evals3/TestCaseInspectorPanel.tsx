@@ -22,7 +22,6 @@ interface TestCaseInspectorPanelProps {
   report: EvaluationReport;
   testCase: TestCase | null;
   status: ResultStatus;
-  onClose?: () => void;
 }
 
 export const TestCaseInspectorPanel: React.FC<TestCaseInspectorPanelProps> = ({

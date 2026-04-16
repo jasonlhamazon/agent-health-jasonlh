@@ -311,9 +311,9 @@ function computeMaxStreak(dates: string[]): number {
   for (let i = 1; i < dates.length; i++) {
     const prev = new Date(dates[i - 1]);
     const curr = new Date(dates[i]);
-    const diffDays = (curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24);
+    const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24));
 
-    if (Math.abs(diffDays - 1) < 0.1) {
+    if (diffDays === 1) {
       currentStreak++;
       maxStreak = Math.max(maxStreak, currentStreak);
     } else {
@@ -370,8 +370,8 @@ async function checkCostOptimizer(
   if (costPerCompletions.length < 2) return false;
 
   costPerCompletions.sort((a, b) => a - b);
-  const p25Index = Math.floor(costPerCompletions.length * 0.25);
-  const p25Value = costPerCompletions[p25Index];
+  const p25Index = Math.ceil(costPerCompletions.length * 0.25) - 1;
+  const p25Value = costPerCompletions[Math.max(0, p25Index)];
 
   return userCostPerCompletion <= p25Value;
 }

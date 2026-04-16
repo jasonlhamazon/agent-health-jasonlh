@@ -64,7 +64,6 @@ export const RunDetailsFlyout: React.FC<RunDetailsFlyoutProps> = ({
                 report={report}
                 testCase={testCase}
                 status={getResultStatus(report)}
-                onClose={onClose}
               />
             </div>
           </div>

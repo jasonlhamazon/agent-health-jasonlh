@@ -312,7 +312,6 @@ export const TestCaseDetailPage: React.FC = () => {
               report={selectedRun}
               testCase={testCase}
               status={getStatus(selectedRun)}
-              onClose={() => setSelectedRunId(null)}
             />
           ) : (
             <div className="flex items-center justify-center h-full text-muted-foreground">

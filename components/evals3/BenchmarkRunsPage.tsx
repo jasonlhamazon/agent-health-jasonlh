@@ -16,7 +16,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   GitCompare, Calendar, CheckCircle2, XCircle, Play,
   Trash2, Plus, X, Loader2, Circle, Check, ChevronRight, Clock,
@@ -76,8 +76,7 @@ const getEffectiveRunStatus = (run: BenchmarkRun): BenchmarkRun['status'] => {
 export const BenchmarkRunsPage2: React.FC = () => {
   const { benchmarkId } = useParams<{ benchmarkId: string }>();
   const navigate = useNavigate();
-  const location = useLocation();
-  const parentPath = location.pathname.startsWith('/evals3') ? '/evaluations/benchmarks' : '/evaluations/benchmarks';
+  const parentPath = '/evaluations/benchmarks';
 
   const [benchmark, setBenchmark] = useState<Benchmark | null>(null);
   const [testCases, setTestCases] = useState<TestCase[]>([]);
@@ -227,7 +226,7 @@ export const BenchmarkRunsPage2: React.FC = () => {
     let passed = 0, failed = 0, pending = 0;
     Object.values(run.results || {}).forEach(r => {
       if (r.status === 'running') return;
-      else if (r.status === 'completed') pending++;
+      else if (r.status === 'completed') passed++;
       else if (r.status === 'failed' || r.status === 'cancelled') failed++;
       else pending++;
     });

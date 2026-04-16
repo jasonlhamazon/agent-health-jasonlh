@@ -149,13 +149,14 @@ export const EvalRunsPage: React.FC = () => {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Load annotation counts for all runs (deferred, non-blocking)
+  // Load annotation counts for all runs (deferred, non-blocking, parallelized)
   useEffect(() => {
     if (benchmarks.length === 0) return;
+    let cancelled = false;
     (async () => {
       const map = new Map<string, { total: number; tcCount: number; firstTcId: string }>();
-      for (const bm of benchmarks) {
-        for (const run of bm.runs || []) {
+      await Promise.all(benchmarks.flatMap(bm =>
+        (bm.runs || []).map(async run => {
           let totalAnnotations = 0;
           let tcWithAnnotations = 0;
           let firstTcId = '';
@@ -173,10 +174,11 @@ export const EvalRunsPage: React.FC = () => {
           if (totalAnnotations > 0) {
             map.set(run.id, { total: totalAnnotations, tcCount: tcWithAnnotations, firstTcId });
           }
-        }
-      }
-      setAnnotationMap(map);
+        })
+      ));
+      if (!cancelled) setAnnotationMap(map);
     })();
+    return () => { cancelled = true; };
   }, [benchmarks]);
 
   useEffect(() => {
@@ -305,7 +307,6 @@ export const EvalRunsPage: React.FC = () => {
     : 0;
 
   // Regressions — computed after groupedByBenchmark
-  const regressionCount = 0; // placeholder, computed below
 
   // Sort
   const sortRows = useCallback((rows: RunRow[]) => {
@@ -378,12 +379,12 @@ export const EvalRunsPage: React.FC = () => {
   // Grouped by benchmark
   const groupedByBenchmark = useMemo(() => {
     const groups = new Map<string, { id: string; name: string; rows: RunRow[] }>();
-    for (const rr of allRunRows) {
+    for (const rr of filteredRunRows) {
       if (!groups.has(rr.benchmarkId)) groups.set(rr.benchmarkId, { id: rr.benchmarkId, name: rr.benchmarkName, rows: [] });
       groups.get(rr.benchmarkId)!.rows.push(rr);
     }
     return Array.from(groups.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [allRunRows]);
+  }, [filteredRunRows]);
 
   // Regressions — count benchmarks where latest run is worse than previous
   const regressionData = useMemo(() => {

@@ -89,7 +89,7 @@ function RunMultiSelect({
           <div className="max-h-[240px] overflow-y-auto p-1">
             {runs.map(run => {
               const isSelected = selectedIds.includes(run.id);
-              const canDeselect = true;
+              const canDeselect = selectedIds.length > 1;
               return (
                 <button
                   key={run.id}
@@ -252,11 +252,14 @@ export const ComparisonPage: React.FC = () => {
     const urlRunIds = searchParams.get('runs')?.split(',').filter(Boolean) || [];
     if (urlRunIds.length > 0 && allRuns.length > 0) {
       const validRunIds = urlRunIds.filter(id => allRuns.some(r => r.id === id));
-      if (validRunIds.length > 0 && validRunIds.join(',') !== selectedRunIds.join(',')) {
-        setSelectedRunIds(validRunIds);
+      if (validRunIds.length > 0) {
+        setSelectedRunIds(prev => {
+          const same = prev.length === validRunIds.length && validRunIds.every(id => prev.includes(id));
+          return same ? prev : validRunIds;
+        });
       }
     }
-  }, [searchParams, allRuns, selectedRunIds]);
+  }, [searchParams, allRuns]);
 
   // Fetch trace metrics
   useEffect(() => {

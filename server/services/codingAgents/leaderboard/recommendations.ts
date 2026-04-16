@@ -188,10 +188,13 @@ export async function getRecommendations(
 
   if (userCostPerSession > teamAvgCostPerSession * 1.5) {
     const potentialSavings = (userCostPerSession - topAvgCostPerSession) * userSessions;
+    const savingsPct = userCostPerSession > 0
+      ? ((1 - topAvgCostPerSession / userCostPerSession) * 100).toFixed(0)
+      : '0';
     recommendations.push({
       type: 'model_selection',
       title: 'Optimize model usage for cost',
-      description: `Your average cost per session ($${userCostPerSession.toFixed(3)}) is significantly above team average ($${teamAvgCostPerSession.toFixed(3)}). Consider using lighter models for simple tasks — teammates using efficient models save ${((1 - topAvgCostPerSession / userCostPerSession) * 100).toFixed(0)}%.`,
+      description: `Your average cost per session ($${userCostPerSession.toFixed(3)}) is significantly above team average ($${teamAvgCostPerSession.toFixed(3)}). Consider using lighter models for simple tasks — teammates using efficient models save ${savingsPct}%.`,
       your_value: userCostPerSession,
       team_avg: teamAvgCostPerSession,
       top_performer_avg: topAvgCostPerSession,
