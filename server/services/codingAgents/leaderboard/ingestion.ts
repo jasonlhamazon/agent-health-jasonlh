@@ -165,10 +165,10 @@ export async function syncSessions(
       const action = item.index;
       if (action?.status === 200 || action?.status === 201) {
         synced++;
-      } else if (action?.status === 409) {
-        skipped++; // already exists
-      } else {
+      } else if (action?.error) {
         errors++;
+      } else {
+        synced++;
       }
     }
   }

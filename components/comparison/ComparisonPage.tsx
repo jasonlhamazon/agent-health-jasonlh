@@ -293,12 +293,14 @@ export const ComparisonPage: React.FC = () => {
     const newSelection = selectedRunIds.includes(runId)
       ? selectedRunIds.filter(id => id !== runId)
       : [...selectedRunIds, runId];
+    if (newSelection.length < 1) return;
     updateSelection(newSelection);
   };
 
   // Handle benchmark change — navigate to new URL
   const handleBenchmarkChange = (newBmId: string) => {
     if (newBmId !== benchmarkId) {
+      setSelectedRunIds([]);
       navigate(`/compare/${newBmId}`, { replace: true });
     }
   };

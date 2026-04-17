@@ -219,7 +219,7 @@ export const BenchmarkRunsPage2: React.FC = () => {
     if (run.stats && typeof run.stats.passed === 'number') {
       return {
         passed: run.stats.passed, failed: run.stats.failed,
-        pending: run.stats.pending - running, running,
+        pending: Math.max(0, run.stats.pending - running), running,
         total: run.stats.total,
       };
     }
@@ -348,7 +348,8 @@ export const BenchmarkRunsPage2: React.FC = () => {
 
   const handleToggleSelectAll = () => {
     const allRunIds = filteredRuns.map(r => r.id);
-    setSelectedRunIds(prev => prev.length === allRunIds.length ? [] : allRunIds);
+    const allSelected = allRunIds.every(id => selectedRunIds.includes(id));
+    setSelectedRunIds(allSelected ? [] : allRunIds);
   };
 
   const handleCompareSelected = () => {

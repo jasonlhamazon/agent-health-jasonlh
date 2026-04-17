@@ -218,7 +218,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                       <SidebarMenuButton
                         asChild
                         tooltip="Evaluations"
-                        isActive={location.pathname.startsWith("/evals3")}
+                        isActive={location.pathname.startsWith("/evaluations")}
                         className="h-9 w-full"
                       >
                         <div className="flex items-center w-full">
@@ -240,7 +240,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                       <CollapsibleContent>
                         <SidebarMenuSub className="ml-4 mt-1 space-y-1">
                           <SidebarMenuSubItem>
-                            <SidebarMenuSubButton asChild isActive={location.pathname === "/evaluations/benchmarks" || (location.pathname.startsWith("/evaluations/benchmarks/") && !/\/evals3\/benchmarks\/[^/]+\/runs\/[^/]+/.test(location.pathname))} data-testid="nav-evals3-benchmarks" className="h-8">
+                            <SidebarMenuSubButton asChild isActive={location.pathname === "/evaluations/benchmarks" || (location.pathname.startsWith("/evaluations/benchmarks/") && !/\/evaluations\/benchmarks\/[^/]+\/runs\/[^/]+/.test(location.pathname))} data-testid="nav-evals3-benchmarks" className="h-8">
                               <Link to="/evaluations/benchmarks" className="text-xs">Benchmarks</Link>
                             </SidebarMenuSubButton>
                           </SidebarMenuSubItem>
@@ -250,7 +250,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                             </SidebarMenuSubButton>
                           </SidebarMenuSubItem>
                           <SidebarMenuSubItem>
-                            <SidebarMenuSubButton asChild isActive={location.pathname === "/evaluations/runs" || /\/evals3\/benchmarks\/[^/]+\/runs\/[^/]+/.test(location.pathname)} data-testid="nav-evals3-runs" className="h-8">
+                            <SidebarMenuSubButton asChild isActive={location.pathname === "/evaluations/runs" || /\/evaluations\/benchmarks\/[^/]+\/runs\/[^/]+/.test(location.pathname)} data-testid="nav-evals3-runs" className="h-8">
                               <Link to="/evaluations/runs" className="text-xs">Evaluation Runs</Link>
                             </SidebarMenuSubButton>
                           </SidebarMenuSubItem>
@@ -263,7 +263,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 {/* Evaluations icon only when collapsed */}
                 {isCollapsed && (
                   <SidebarMenuItem>
-                    <SidebarMenuButton asChild isActive={location.pathname.startsWith("/evals3")} tooltip="Evaluations" data-testid="nav-evals3" className="h-9">
+                    <SidebarMenuButton asChild isActive={location.pathname.startsWith("/evaluations")} tooltip="Evaluations" data-testid="nav-evals3" className="h-9">
                       <Link to="/evaluations/benchmarks" className="justify-center">
                         <Gauge className="h-4 w-4" />
                       </Link>

@@ -300,8 +300,7 @@ export const TestCasesPage4: React.FC = () => {
       if (!validation.valid || !validation.data) return;
       const result = await asyncTestCaseStorage.bulkCreate(validation.data);
       if (result.created > 0) {
-        const allTcs = await asyncTestCaseStorage.getAll();
-        const createdIds = (allTcs as TestCase[]).filter(tc => validation.data!.some(d => d.name === tc.name)).map(tc => tc.id);
+        const createdIds = (result as any).ids ?? (await asyncTestCaseStorage.getAll() as TestCase[]).filter(tc => validation.data!.some(d => d.name === tc.name)).map(tc => tc.id);
         const bm = await asyncBenchmarkStorage.create({
           name: file.name.replace(/\.json$/i, '') || 'Imported Benchmark',
           description: `Auto-created from import of ${result.created} test case(s)`,
