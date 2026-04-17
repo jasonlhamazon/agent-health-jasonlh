@@ -116,10 +116,12 @@ export const RunInspectorPage: React.FC = () => {
     const result = results.find(r => r.testCaseId === selectedTcId);
     if (!result?.reportId) { setSelectedReport(null); return; }
     setReportLoading(true);
+    let cancelled = false;
     asyncRunStorage.getReportById(result.reportId)
-      .then(report => setSelectedReport(report || null))
-      .catch(() => setSelectedReport(null))
-      .finally(() => setReportLoading(false));
+      .then(report => { if (!cancelled) setSelectedReport(report || null); })
+      .catch(() => { if (!cancelled) setSelectedReport(null); })
+      .finally(() => { if (!cancelled) setReportLoading(false); });
+    return () => { cancelled = true; };
   }, [selectedTcId, results]);
 
   const passCount = results.filter(r => r.status === 'passed').length;

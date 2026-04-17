@@ -36,6 +36,8 @@ interface UseCaseComparisonTableProps {
   reports: Record<string, EvaluationReport>;
   referenceRunId?: string;
   visibleEvaluators?: Set<EvaluatorType>;
+  trajectoryRunPair?: [string, string] | null;
+  trajectoryTargetTestCase?: string | null;
   onTrajectoryRequest?: (testCaseId: string) => void;
 }
 

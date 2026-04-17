@@ -346,7 +346,11 @@ export const BenchmarksPage4: React.FC = () => {
       if (!validation.valid || !validation.data) return;
       const result = await asyncTestCaseStorage.bulkCreate(validation.data);
       if (result.created > 0) {
-        const createdIds = (result as any).ids ?? (await asyncTestCaseStorage.getAll() as TestCase[]).filter(tc => validation.data!.some(d => d.name === tc.name)).map(tc => tc.id);
+        const createdIds = (result as any).ids;
+        if (!createdIds || createdIds.length === 0) {
+          console.error('Import succeeded but created IDs are unavailable');
+          return;
+        }
         const bm = await asyncBenchmarkStorage.create({
           name: file.name.replace(/\.json$/i, '') || 'Imported Benchmark',
           description: `Auto-created from import of ${result.created} test case(s)`,

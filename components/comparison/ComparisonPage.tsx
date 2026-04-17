@@ -545,6 +545,8 @@ export const ComparisonPage: React.FC = () => {
                 runs={selectedRuns}
                 reports={reports}
                 referenceRunId={referenceRunId}
+                trajectoryRunPair={trajectoryRunPair}
+                trajectoryTargetTestCase={trajectoryTargetTestCase}
                 onTrajectoryRequest={(testCaseId) => {
                   setTrajectoryTargetTestCase(testCaseId);
                   setShowRunPairSelector(true);

@@ -310,7 +310,9 @@ export const BenchmarkRunsPage2: React.FC = () => {
           }));
         }
       );
-      setUseCaseStatuses(prev => prev.map(uc => ({ ...uc, status: 'completed' as const })));
+      setUseCaseStatuses(prev => prev.map(uc =>
+        uc.status === 'pending' || uc.status === 'running' ? { ...uc, status: 'completed' as const } : uc
+      ));
       loadBenchmark();
     } catch (error) {
       console.error('Error running benchmark:', error);
