@@ -315,6 +315,7 @@ export const ComparisonPage: React.FC = () => {
 
   const handleRunPairCancel = () => {
     setTrajectoryTargetTestCase(null);
+    setTrajectoryRunPair(null);
     setShowRunPairSelector(false);
   };
 
@@ -549,6 +550,7 @@ export const ComparisonPage: React.FC = () => {
                 trajectoryTargetTestCase={trajectoryTargetTestCase}
                 onTrajectoryRequest={(testCaseId) => {
                   setTrajectoryTargetTestCase(testCaseId);
+                  setTrajectoryRunPair(null);
                   setShowRunPairSelector(true);
                 }}
               />
