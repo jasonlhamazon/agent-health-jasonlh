@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { GitCompare, ArrowLeft, ChevronDown, ChevronRight, X, Check } from 'lucide-react';
+import { GitCompare, ArrowLeft, ChevronDown, ChevronRight, X, Check, Loader2 } from 'lucide-react';
 import {
   Collapsible,
   CollapsibleContent,
@@ -205,6 +205,8 @@ export const ComparisonPage: React.FC = () => {
         return;
       }
 
+      setIsLoading(true);
+
       const bench = await asyncBenchmarkStorage.getById(benchmarkId);
       if (!bench) {
         navigate('/benchmarks');
@@ -372,7 +374,7 @@ export const ComparisonPage: React.FC = () => {
   const [summaryOpen, setSummaryOpen] = useState(false);
 
   if (isLoading) {
-    return <div className="p-6 flex items-center justify-center h-full"><p className="text-muted-foreground">Loading...</p></div>;
+    return <div className="p-6 flex items-center justify-center h-full"><Loader2 size={24} className="animate-spin text-muted-foreground" /></div>;
   }
 
   if (!benchmark) {
