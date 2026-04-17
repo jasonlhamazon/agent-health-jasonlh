@@ -347,7 +347,7 @@ export const BenchmarkRunsPage2: React.FC = () => {
   };
 
   const handleToggleSelectAll = () => {
-    const allRunIds = (benchmark?.runs || []).map(r => r.id);
+    const allRunIds = filteredRuns.map(r => r.id);
     setSelectedRunIds(prev => prev.length === allRunIds.length ? [] : allRunIds);
   };
 

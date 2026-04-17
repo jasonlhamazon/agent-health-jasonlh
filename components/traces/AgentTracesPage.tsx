@@ -571,8 +571,9 @@ export const AgentTracesPage: React.FC = () => {
   // Re-sort traces when sort column or direction changes
   useEffect(() => {
     const sortedTraces = sortTraces(allTraces);
-    setDisplayedTraces(sortedTraces.slice(0, displayCount));
-  }, [sortColumn, sortDirection, allTraces, displayCount, sortTraces]);
+    setDisplayedTraces(sortedTraces.slice(0, 100));
+    setDisplayCount(100);
+  }, [sortColumn, sortDirection, allTraces, sortTraces]);
 
   // Handle scroll to hide/show container header
   useEffect(() => {
@@ -947,34 +948,6 @@ export const AgentTracesPage: React.FC = () => {
       }
     }
   }, []);
-
-  // Lazy loading with intersection observer
-  useEffect(() => {
-    const currentRef = loadMoreRef.current;
-    if (!currentRef || displayCount >= filteredTraces.length) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const target = entries[0];
-        if (target.isIntersecting && displayCount < filteredTraces.length) {
-          const nextCount = Math.min(displayCount + 100, filteredTraces.length);
-          setDisplayedTraces(filteredTraces.slice(0, nextCount));
-          setDisplayCount(nextCount);
-        }
-      },
-      {
-        root: null,
-        rootMargin: '200px',
-        threshold: 0.1,
-      }
-    );
-
-    observer.observe(currentRef);
-
-    return () => {
-      observer.unobserve(currentRef);
-    };
-  }, [displayCount, filteredTraces]);
 
   // Reset displayed traces when filteredTraces changes
   useEffect(() => {
