@@ -21,6 +21,8 @@ import { TracesPage } from './components/traces/TracesPage';
 import { AgentTracesPage } from './components/traces/AgentTracesPage';
 import { PerformanceOverlay } from './components/PerformanceOverlay';
 import { CodingAgentsPage } from './components/codingAgents/CodingAgentsPage';
+import { EvaluatorsPage } from './components/EvaluatorsPage';
+import { EvaluatorEditPage } from './components/EvaluatorEditPage';
 
 function ExperimentRunsRedirect() {
   const { experimentId } = useParams();
@@ -94,6 +96,9 @@ function App() {
             <Route path="/test-cases/:testCaseId/runs" element={<TestCaseRunsPage />} />
             <Route path="/benchmarks" element={<BenchmarksPage />} />
             <Route path="/benchmarks/:benchmarkId/runs" element={<BenchmarkRunsPage />} />
+            <Route path="/evaluators" element={<EvaluatorsPage />} />
+            <Route path="/evaluators/new" element={<EvaluatorEditPage />} />
+            <Route path="/evaluators/:evaluatorId/edit" element={<EvaluatorEditPage />} />
 
             {/* Unified run details page - works for both test case and benchmark runs */}
             <Route path="/runs/:runId" element={<RunDetailsPage />} />

@@ -9,10 +9,17 @@ Inspired by [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+## [0.4.0]
+
 ### Fixed
 - Extra spacing in Timeline view by removing container padding ([#73](https://github.com/opensearch-project/agent-health/issues/73))
 
 ### Added
+- Pluggable evaluator architecture with 5 built-in system evaluators (RCA Default, Factuality, Tool Usage Efficiency, Reasoning Depth, Safety)
+- Evaluator management UI: create, edit, duplicate, and delete custom evaluators with versioning support
+- Evaluator selection in benchmark runs, Quick Run modal, and CLI (`--evaluator` flag)
+- REST API for evaluator CRUD at `/api/storage/evaluators` with system evaluator protection
+- Dynamic metrics extraction based on evaluator scoring config in judge services
 - Auto-increment server port on EADDRINUSE — if port 4001 is in use, tries 4002, 4003, etc. up to 10 attempts
 - GitHub Actions workflow for AI-powered PR code diff analysis and review via AWS Bedrock
 - Kiro CLI SQLite reader with progressive warmup, non-blocking cache, and phase-aware loading UX
