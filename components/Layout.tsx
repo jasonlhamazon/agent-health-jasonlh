@@ -13,6 +13,7 @@ import {
   Search,
   TestTube,
   BarChart3,
+  Brain,
 } from "lucide-react";
 import OpenSearchLogoDark from "@/assets/opensearch-logo.svg";
 import OpenSearchLogoLight from "@/assets/opensearch-logo-light.svg";
@@ -266,6 +267,72 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                     <SidebarMenuButton asChild isActive={location.pathname.startsWith("/evaluations")} tooltip="Evaluations" data-testid="nav-evals3" className="h-9">
                       <Link to="/evaluations/benchmarks" className="justify-center">
                         <Gauge className="h-4 w-4" />
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
+
+                {/* Agent Judge (concept mockup) */}
+                {!isCollapsed && (
+                  <Collapsible defaultOpen={location.pathname.startsWith("/judge")}>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        asChild
+                        tooltip="Agent Judge"
+                        isActive={location.pathname.startsWith("/judge")}
+                        className="h-9 w-full"
+                      >
+                        <div className="flex items-center w-full">
+                          <Link to="/judge" className="flex items-center gap-2 flex-1 min-w-0">
+                            <Brain className="h-3.5 w-3.5" />
+                            <span className="text-xs">Agent Judge</span>
+                            <span className="text-[7px] px-1 py-0 rounded bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-400 font-medium">NEW</span>
+                          </Link>
+                          <CollapsibleTrigger asChild>
+                            <button
+                              onClick={(e) => e.stopPropagation()}
+                              className="p-0.5 rounded hover:bg-muted-foreground/20 transition-colors ml-auto"
+                              aria-label="Toggle judge submenu"
+                            >
+                              <ChevronDown className="h-3.5 w-3.5 transition-transform duration-200" />
+                            </button>
+                          </CollapsibleTrigger>
+                        </div>
+                      </SidebarMenuButton>
+                      <CollapsibleContent>
+                        <SidebarMenuSub className="ml-4 mt-1 space-y-1">
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton asChild isActive={location.pathname === "/judge"} className="h-8">
+                              <Link to="/judge" className="text-xs">Configure</Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton asChild isActive={location.pathname === "/judge/evaluate"} className="h-8">
+                              <Link to="/judge/evaluate" className="text-xs">Live Evaluation</Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton asChild isActive={location.pathname === "/judge/compare"} className="h-8">
+                              <Link to="/judge/compare" className="text-xs">Guided Compare</Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton asChild isActive={location.pathname === "/judge/review"} className="h-8">
+                              <Link to="/judge/review" className="text-xs">Stakeholder Review</Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        </SidebarMenuSub>
+                      </CollapsibleContent>
+                    </SidebarMenuItem>
+                  </Collapsible>
+                )}
+
+                {/* Agent Judge icon only when collapsed */}
+                {isCollapsed && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location.pathname.startsWith("/judge")} tooltip="Agent Judge" className="h-9">
+                      <Link to="/judge" className="justify-center">
+                        <Brain className="h-4 w-4" />
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

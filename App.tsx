@@ -30,6 +30,12 @@ import { TestCaseDetailPage as Evals3TestCaseDetail } from './components/evals3/
 import { EvalRunsPage as Evals3EvalRuns } from './components/evals3/EvalRunsPage';
 import { RunInspectorPage as Evals3RunInspector } from './components/evals3/RunInspectorPage';
 
+// Agent-as-a-Judge (concept mockup)
+import { JudgeConfigPage } from './components/judge/JudgeConfigPage';
+import { LiveEvaluationPage } from './components/judge/LiveEvaluationPage';
+import { GuidedComparePage } from './components/judge/GuidedComparePage';
+import { StakeholderPage } from './components/judge/StakeholderPage';
+
 function ExperimentRunsRedirect() {
   const { experimentId } = useParams();
   return <Navigate to={`/benchmarks/${experimentId}/runs`} replace />;
@@ -127,6 +133,12 @@ function App() {
             <Route path="/evaluations/test-cases" element={<Evals3TestCases />} />
             <Route path="/evaluations/test-cases/:testCaseId" element={<Evals3TestCaseDetail />} />
             <Route path="/evaluations/runs" element={<Evals3EvalRuns />} />
+
+            {/* Agent-as-a-Judge (concept mockup) */}
+            <Route path="/judge" element={<JudgeConfigPage />} />
+            <Route path="/judge/evaluate" element={<LiveEvaluationPage />} />
+            <Route path="/judge/compare" element={<GuidedComparePage />} />
+            <Route path="/judge/review" element={<StakeholderPage />} />
             <Route path="/evaluations/benchmarks/:benchmarkId/runs" element={<Evals3BenchmarkRuns />} />
             <Route path="/evaluations/benchmarks/:benchmarkId/runs/:runId" element={<Navigate to="inspect" replace />} />
             <Route path="/evaluations/benchmarks/:benchmarkId/runs/:runId/inspect" element={<Evals3RunInspector />} />
