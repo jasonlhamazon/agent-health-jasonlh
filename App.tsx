@@ -35,6 +35,7 @@ import { JudgeConfigPage } from './components/judge/JudgeConfigPage';
 import { LiveEvaluationPage } from './components/judge/LiveEvaluationPage';
 import { GuidedComparePage } from './components/judge/GuidedComparePage';
 import { StakeholderPage } from './components/judge/StakeholderPage';
+import { TrajectoryDeviationPage } from './components/judge/TrajectoryDeviationPage';
 
 function ExperimentRunsRedirect() {
   const { experimentId } = useParams();
@@ -139,6 +140,7 @@ function App() {
             <Route path="/judge/evaluate" element={<LiveEvaluationPage />} />
             <Route path="/judge/compare" element={<GuidedComparePage />} />
             <Route path="/judge/review" element={<StakeholderPage />} />
+            <Route path="/judge/trajectory" element={<TrajectoryDeviationPage />} />
             <Route path="/evaluations/benchmarks/:benchmarkId/runs" element={<Evals3BenchmarkRuns />} />
             <Route path="/evaluations/benchmarks/:benchmarkId/runs/:runId" element={<Navigate to="inspect" replace />} />
             <Route path="/evaluations/benchmarks/:benchmarkId/runs/:runId/inspect" element={<Evals3RunInspector />} />

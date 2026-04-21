@@ -321,6 +321,11 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                               <Link to="/judge/review" className="text-xs">Stakeholder Review</Link>
                             </SidebarMenuSubButton>
                           </SidebarMenuSubItem>
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton asChild isActive={location.pathname === "/judge/trajectory"} className="h-8">
+                              <Link to="/judge/trajectory" className="text-xs">Trajectory Deviation</Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
                         </SidebarMenuSub>
                       </CollapsibleContent>
                     </SidebarMenuItem>
