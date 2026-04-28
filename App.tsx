@@ -24,6 +24,14 @@ import { CodingAgentsPage } from './components/codingAgents/CodingAgentsPage';
 import { EvaluatorsPage } from './components/EvaluatorsPage';
 import { EvaluatorEditPage } from './components/EvaluatorEditPage';
 
+// Evals 3 — Evaluations
+import { BenchmarksPage4 as Evals3Benchmarks } from './components/evals3/BenchmarksPage';
+import { TestCasesPage4 as Evals3TestCases } from './components/evals3/TestCasesPage';
+import { BenchmarkRunsPage2 as Evals3BenchmarkRuns } from './components/evals3/BenchmarkRunsPage';
+import { TestCaseDetailPage as Evals3TestCaseDetail } from './components/evals3/TestCaseDetailPage';
+import { EvalRunsPage as Evals3EvalRuns } from './components/evals3/EvalRunsPage';
+import { RunInspectorPage as Evals3RunInspector } from './components/evals3/RunInspectorPage';
+
 function ExperimentRunsRedirect() {
   const { experimentId } = useParams();
   return <Navigate to={`/benchmarks/${experimentId}/runs`} replace />;
@@ -110,6 +118,7 @@ function App() {
             <Route path="/settings" element={<SettingsPage />} />
 
             {/* Comparison */}
+            <Route path="/compare" element={<ComparisonPage />} />
             <Route path="/compare/:benchmarkId" element={<ComparisonPage />} />
 
             {/* Live Traces */}
@@ -118,9 +127,17 @@ function App() {
             {/* Agent Traces - Table View */}
             <Route path="/agent-traces" element={<AgentTracesPage />} />
 
+            {/* Evals 3 → Evaluations */}
+            <Route path="/evaluations/benchmarks" element={<Evals3Benchmarks />} />
+            <Route path="/evaluations/test-cases" element={<Evals3TestCases />} />
+            <Route path="/evaluations/test-cases/:testCaseId" element={<Evals3TestCaseDetail />} />
+            <Route path="/evaluations/runs" element={<Evals3EvalRuns />} />
+            <Route path="/evaluations/benchmarks/:benchmarkId/runs" element={<Evals3BenchmarkRuns />} />
+            <Route path="/evaluations/benchmarks/:benchmarkId/runs/:runId" element={<Navigate to="inspect" replace />} />
+            <Route path="/evaluations/benchmarks/:benchmarkId/runs/:runId/inspect" element={<Evals3RunInspector />} />
+
             {/* Coding Agent Analytics */}
             <Route path="/coding-agents" element={<CodingAgentsPage />} />
-
             {/* Redirects for deprecated routes */}
             <Route path="/evals" element={<Navigate to="/test-cases" replace />} />
             <Route path="/run" element={<Navigate to="/test-cases" replace />} />
