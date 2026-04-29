@@ -74,7 +74,14 @@ router.post('/api/traces', async (req: Request, res: Response) => {
         nextCursor = result.nextCursor || null;
         hasMore = result.hasMore || false;
       } catch (e: any) {
-        console.warn('[TracesAPI] OpenSearch query failed:', e.message);
+        const meta = e.meta;
+        if (meta) {
+          console.warn('[TracesAPI] OpenSearch query failed:', e.message,
+            '| status:', meta.statusCode,
+            '| body:', JSON.stringify(meta.body)?.substring(0, 500));
+        } else {
+          console.warn('[TracesAPI] OpenSearch query failed:', e.message);
+        }
         warning = e.message;
       } finally {
         if (client) {
