@@ -2976,7 +2976,7 @@ export const CodingAgentsPage: React.FC = () => {
   }, [activeTab, rangePreset]);
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl">
+    <div className="p-6 space-y-6">
       <div className="flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Coding Agent Analytics</h1>
