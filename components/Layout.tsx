@@ -14,6 +14,7 @@ import {
   TestTube,
   BarChart3,
   Brain,
+  Network,
 } from "lucide-react";
 import OpenSearchLogoDark from "@/assets/opensearch-logo.svg";
 import OpenSearchLogoLight from "@/assets/opensearch-logo-light.svg";
@@ -63,6 +64,7 @@ export const useSidebarCollapse = () => {
 };
 
 const navItems = [
+  { to: "/agent-dashboard", icon: Network, label: "Agent Dashboard", tooltip: "Live swarm view of target and evaluator agents", testId: "nav-agent-dashboard", isNew: true },
   { to: "/", icon: LayoutDashboard, label: "Overview", tooltip: "Dashboard and quick stats", testId: "nav-overview" },
   { to: "/agent-traces", icon: Activity, label: "Agent Traces", tooltip: "View and debug agent executions", testId: "nav-agent-traces" },
   { to: "/coding-agents", icon: BarChart3, label: "Coding Agents", tooltip: "Claude Code, Kiro & Codex analytics", testId: "nav-coding-agents" },
@@ -206,6 +208,9 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                       <Link to={item.to} className={isCollapsed ? 'justify-center' : ''}>
                         <item.icon className="h-3.5 w-3.5" />
                         {!isCollapsed && <span className="text-xs">{item.label}</span>}
+                        {!isCollapsed && (item as { isNew?: boolean }).isNew && (
+                          <span className="text-[7px] px-1 py-0 rounded bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-400 font-medium ml-auto">NEW</span>
+                        )}
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
