@@ -28,7 +28,7 @@ import {
   type NodeProps,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Brain, Eye, Shield, DollarSign, Sparkles, Bot, Search, ListTree, Wrench, Library, Gavel } from 'lucide-react';
+import { Brain, Eye, Shield, DollarSign, Sparkles, Bot, Search, ListTree, Terminal, Compass, Gavel } from 'lucide-react';
 import {
   ALL_AGENTS,
   ALL_LINKS,
@@ -78,13 +78,15 @@ function ringLayout(
 // ---------- Custom nodes ----------------------------------------------------
 
 const ROLE_ICON: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
-  orchestrator: Bot,
-  researcher: Search,
-  planner: ListTree,
-  executor: Wrench,
-  retriever: Library,
-  critic: Gavel,
-  pathfinder: Sparkles,
+  // Target roles — OpenSearch RCA team
+  supervisor: Bot,
+  log_analyst: Search,
+  triage_planner: ListTree,
+  ppl_runner: Terminal,
+  index_navigator: Compass,
+  hypothesis_reviewer: Gavel,
+  // Evaluator roles — platform judges
+  trajectory: Sparkles,
   coherence: Brain,
   safety: Shield,
   cost: DollarSign,
@@ -309,8 +311,47 @@ export const InteractionSwarm: React.FC<InteractionSwarmProps> = ({
         zoomOnScroll
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#1e293b" />
-        <Controls showInteractive={false} className="!bg-slate-900/80 !border-slate-700" />
+        <Controls showInteractive={false} className="swarm-controls" />
       </ReactFlow>
+
+      {/*
+        Scoped dark-mode overrides for React Flow's <Controls>. React Flow v12
+        ships default rules on .react-flow__controls-button with the same
+        specificity as ours, so we chain .swarm-controls on itself to raise
+        specificity and mark the background/fill !important to guarantee the
+        dark theme wins regardless of stylesheet load order.
+      */}
+      <style>{`
+        .swarm-controls.swarm-controls.react-flow__controls {
+          background: rgba(15, 23, 42, 0.85) !important;
+          border: 1px solid #334155 !important;
+          border-radius: 6px !important;
+          box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45) !important;
+          backdrop-filter: blur(6px);
+          overflow: hidden;
+        }
+        .swarm-controls.swarm-controls .react-flow__controls-button {
+          background: transparent !important;
+          border: none !important;
+          border-bottom: 1px solid #334155 !important;
+          width: 26px !important;
+          height: 26px !important;
+          color: #e2e8f0 !important;
+        }
+        .swarm-controls.swarm-controls .react-flow__controls-button:last-child {
+          border-bottom: none !important;
+        }
+        .swarm-controls.swarm-controls .react-flow__controls-button:hover {
+          background: rgba(51, 65, 85, 0.9) !important;
+          color: #ffffff !important;
+        }
+        .swarm-controls.swarm-controls .react-flow__controls-button svg,
+        .swarm-controls.swarm-controls .react-flow__controls-button path {
+          fill: currentColor !important;
+          width: 12px;
+          height: 12px;
+        }
+      `}</style>
 
       {/* Legend */}
       <div className="absolute top-2 left-2 flex items-center gap-3 px-2.5 py-1.5 rounded-md bg-slate-900/80 border border-slate-700 text-[10px] text-slate-200 backdrop-blur">

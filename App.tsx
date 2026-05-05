@@ -33,6 +33,9 @@ import { RunInspectorPage as Evals3RunInspector } from './components/evals3/RunI
 // Agent Dashboard (concept mockup) — Interaction Swarm + Pathfinder feed
 import { AgentDashboardPage } from './components/agentDashboard/AgentDashboardPage';
 
+// Target Agents (placeholder page)
+import { TargetAgentsPage } from './components/targetAgents/TargetAgentsPage';
+
 // Agent-as-a-Judge (concept mockup)
 import { JudgeConfigPage } from './components/judge/JudgeConfigPage';
 import { LiveEvaluationPage } from './components/judge/LiveEvaluationPage';
@@ -109,6 +112,7 @@ function App() {
             {/* Primary routes */}
             <Route path="/" element={<Dashboard />} />
             <Route path="/agent-dashboard" element={<AgentDashboardPage />} />
+            <Route path="/target-agents" element={<TargetAgentsPage />} />
             <Route path="/test-cases" element={<TestCasesPage />} />
             <Route path="/test-cases/:testCaseId/runs" element={<TestCaseRunsPage />} />
             <Route path="/benchmarks" element={<BenchmarksPage />} />

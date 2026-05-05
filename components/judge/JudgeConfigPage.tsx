@@ -14,7 +14,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Brain, Plus, Play, Settings2, Pencil, Trash2, Copy,
-  CheckCircle2, Shield, ChevronRight, Sparkles,
+  CheckCircle2, Shield, ChevronRight, Sparkles, DollarSign,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -35,16 +35,33 @@ export const JudgeConfigPage: React.FC = () => {
 
   const editingPersona = personas.find(p => p.id === editingId);
 
+  // Icon + tint per persona — keeps the Evaluator Agents page visually
+  // aligned with the dashboard swarm.
+  const personaVisual = (id: string): { icon: React.ReactNode } => {
+    switch (id) {
+      case 'trajectory-judge':
+        return { icon: <Sparkles size={16} className="text-purple-400" /> };
+      case 'coherence-judge':
+        return { icon: <Brain size={16} className="text-purple-500" /> };
+      case 'safety-policy-judge':
+        return { icon: <Shield size={16} className="text-red-500" /> };
+      case 'cost-budget-judge':
+        return { icon: <DollarSign size={16} className="text-emerald-500" /> };
+      default:
+        return { icon: <Brain size={16} className="text-purple-500" /> };
+    }
+  };
+
   return (
     <div className="p-4 h-full flex flex-col">
       <Breadcrumbs
         items={[
           { label: 'Evaluations', href: '/evaluations/benchmarks' },
-          { label: 'Agent Judge' },
+          { label: 'Evaluator Agents' },
         ]}
         actions={
           <Button size="sm" className="h-7 gap-1.5 text-xs" onClick={() => setShowCreate(true)}>
-            <Plus size={12} /> New Judge Persona
+            <Plus size={12} /> New Evaluator
           </Button>
         }
       />
@@ -52,13 +69,13 @@ export const JudgeConfigPage: React.FC = () => {
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-1">
           <Brain size={20} className="text-purple-500" />
-          <h2 className="text-xl font-bold">Agent-as-a-Judge</h2>
+          <h2 className="text-xl font-bold">Evaluator Agents</h2>
           <Badge className="text-[9px] px-1.5 py-0 bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-500/15 dark:text-purple-400 dark:border-purple-500/30">
             Concept
           </Badge>
         </div>
         <p className="text-[11px] text-muted-foreground">
-          Define business-specific quality guidelines instead of brittle metric checkboxes. The judge evaluates agent behavior using your criteria.
+          Define business-specific quality guidelines instead of brittle metric checkboxes. Each evaluator watches a slice of agent behavior using your criteria.
         </p>
       </div>
 
@@ -68,18 +85,18 @@ export const JudgeConfigPage: React.FC = () => {
           <CardContent className="p-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold flex items-center gap-2">
-                <Sparkles size={14} className="text-purple-500" /> New Judge Persona
+                <Sparkles size={14} className="text-purple-500" /> New Evaluator Agent
               </span>
               <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setShowCreate(false)}>Cancel</Button>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Judge Name</label>
-                <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g., Senior Business Leader" className="h-8 text-sm mt-1" />
+                <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Evaluator Name</label>
+                <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g., Trajectory Judge" className="h-8 text-sm mt-1" />
               </div>
               <div>
                 <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Description</label>
-                <Input value={newDescription} onChange={e => setNewDescription(e.target.value)} placeholder="What does this judge evaluate?" className="h-8 text-sm mt-1" />
+                <Input value={newDescription} onChange={e => setNewDescription(e.target.value)} placeholder="What does this evaluator watch?" className="h-8 text-sm mt-1" />
               </div>
             </div>
             <div>
@@ -95,12 +112,12 @@ export const JudgeConfigPage: React.FC = () => {
               <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setShowCreate(false)}>Cancel</Button>
               <Button size="sm" className="h-7 text-xs bg-purple-600 hover:bg-purple-700" onClick={() => {
                 setPersonas(prev => [...prev, {
-                  id: `custom-${Date.now()}`, name: newName || 'Custom Judge', description: newDescription,
+                  id: `custom-${Date.now()}`, name: newName || 'Custom Evaluator', description: newDescription,
                   guidelines: newGuidelines, createdAt: new Date().toISOString(), runsCount: 0,
                 }]);
                 setShowCreate(false); setNewName(''); setNewDescription(''); setNewGuidelines('');
               }}>
-                <Plus size={12} className="mr-1" /> Create Persona
+                <Plus size={12} className="mr-1" /> Create Evaluator
               </Button>
             </div>
           </CardContent>
@@ -119,9 +136,7 @@ export const JudgeConfigPage: React.FC = () => {
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    {persona.id === 'security-auditor'
-                      ? <Shield size={16} className="text-red-500" />
-                      : <Brain size={16} className="text-purple-500" />}
+                    {personaVisual(persona.id).icon}
                     <h3 className="font-semibold text-sm">{persona.name}</h3>
                     <Badge variant="outline" className="text-[9px] px-1.5 py-0">{persona.runsCount} runs</Badge>
                   </div>

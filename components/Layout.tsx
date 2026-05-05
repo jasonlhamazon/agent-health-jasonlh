@@ -5,16 +5,15 @@
 
 import React, { useState, useEffect, createContext, useContext } from "react";
 import {
-  LayoutDashboard,
   Settings,
   ChevronDown,
   Gauge,
-  Activity,
   Search,
   TestTube,
   BarChart3,
   Brain,
   Network,
+  Bot,
 } from "lucide-react";
 import OpenSearchLogoDark from "@/assets/opensearch-logo.svg";
 import OpenSearchLogoLight from "@/assets/opensearch-logo-light.svg";
@@ -65,9 +64,8 @@ export const useSidebarCollapse = () => {
 
 const navItems = [
   { to: "/agent-dashboard", icon: Network, label: "Agent Dashboard", tooltip: "Live swarm view of target and evaluator agents", testId: "nav-agent-dashboard", isNew: true },
-  { to: "/", icon: LayoutDashboard, label: "Overview", tooltip: "Dashboard and quick stats", testId: "nav-overview" },
-  { to: "/agent-traces", icon: Activity, label: "Agent Traces", tooltip: "View and debug agent executions", testId: "nav-agent-traces" },
-  { to: "/coding-agents", icon: BarChart3, label: "Coding Agents", tooltip: "Claude Code, Kiro & Codex analytics", testId: "nav-coding-agents" },
+  // "Overview" ("/") is intentionally hidden from the sidebar for now; route still exists.
+  // "Coding Agents" is rendered separately after the Evaluations section, before Settings.
 ];
 
 const testingSubItems = [
@@ -196,7 +194,8 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
           <SidebarGroup>
             <SidebarGroupContent>
               <SidebarMenu className="space-y-1">
-                {navItems.filter(item => item.to !== '/coding-agents' || features.codingAgentAnalytics).map((item) => (
+                {/* 1. Agent Dashboard — first nav item */}
+                {navItems.slice(0, 1).map((item) => (
                   <SidebarMenuItem key={item.to}>
                     <SidebarMenuButton
                       asChild
@@ -215,6 +214,133 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 ))}
+
+                {/* 2. Target Agents — collapsible group */}
+                {!isCollapsed && (
+                  <Collapsible defaultOpen={location.pathname.startsWith("/target-agents") || location.pathname.startsWith("/agent-traces")}>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        asChild
+                        tooltip="Target Agents"
+                        isActive={location.pathname.startsWith("/target-agents") || location.pathname.startsWith("/agent-traces")}
+                        className="h-9 w-full"
+                      >
+                        <div className="flex items-center w-full">
+                          <Link to="/target-agents" className="flex items-center gap-2 flex-1 min-w-0">
+                            <Bot className="h-3.5 w-3.5" />
+                            <span className="text-xs">Target Agents</span>
+                          </Link>
+                          <CollapsibleTrigger asChild>
+                            <button
+                              onClick={(e) => e.stopPropagation()}
+                              className="p-0.5 rounded hover:bg-muted-foreground/20 transition-colors ml-auto"
+                              aria-label="Toggle target agents submenu"
+                            >
+                              <ChevronDown className="h-3.5 w-3.5 transition-transform duration-200" />
+                            </button>
+                          </CollapsibleTrigger>
+                        </div>
+                      </SidebarMenuButton>
+                      <CollapsibleContent>
+                        <SidebarMenuSub className="ml-4 mt-1 space-y-1">
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton asChild isActive={location.pathname === "/agent-traces"} data-testid="nav-agent-traces" className="h-8">
+                              <Link to="/agent-traces" className="text-xs">Agent Traces</Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        </SidebarMenuSub>
+                      </CollapsibleContent>
+                    </SidebarMenuItem>
+                  </Collapsible>
+                )}
+
+                {/* Target Agents icon only when collapsed */}
+                {isCollapsed && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={location.pathname.startsWith("/target-agents") || location.pathname.startsWith("/agent-traces")}
+                      tooltip="Target Agents"
+                      data-testid="nav-target-agents"
+                      className="h-9"
+                    >
+                      <Link to="/target-agents" className="justify-center">
+                        <Bot className="h-4 w-4" />
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
+
+                {/* 3. Evaluator Agents (was: Agent Judge) — concept mockup */}
+                {!isCollapsed && (
+                  <Collapsible defaultOpen={location.pathname.startsWith("/judge")}>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        asChild
+                        tooltip="Evaluator Agents"
+                        isActive={location.pathname.startsWith("/judge")}
+                        className="h-9 w-full"
+                      >
+                        <div className="flex items-center w-full">
+                          <Link to="/judge" className="flex items-center gap-2 flex-1 min-w-0">
+                            <Brain className="h-3.5 w-3.5" />
+                            <span className="text-xs">Evaluator Agents</span>
+                            <span className="text-[7px] px-1 py-0 rounded bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-400 font-medium">NEW</span>
+                          </Link>
+                          <CollapsibleTrigger asChild>
+                            <button
+                              onClick={(e) => e.stopPropagation()}
+                              className="p-0.5 rounded hover:bg-muted-foreground/20 transition-colors ml-auto"
+                              aria-label="Toggle evaluator agents submenu"
+                            >
+                              <ChevronDown className="h-3.5 w-3.5 transition-transform duration-200" />
+                            </button>
+                          </CollapsibleTrigger>
+                        </div>
+                      </SidebarMenuButton>
+                      <CollapsibleContent>
+                        <SidebarMenuSub className="ml-4 mt-1 space-y-1">
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton asChild isActive={location.pathname === "/judge"} className="h-8">
+                              <Link to="/judge" className="text-xs">Configure</Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton asChild isActive={location.pathname === "/judge/evaluate"} className="h-8">
+                              <Link to="/judge/evaluate" className="text-xs">Live Evaluation</Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton asChild isActive={location.pathname === "/judge/compare"} className="h-8">
+                              <Link to="/judge/compare" className="text-xs">Guided Compare</Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton asChild isActive={location.pathname === "/judge/review"} className="h-8">
+                              <Link to="/judge/review" className="text-xs">Stakeholder Review</Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton asChild isActive={location.pathname === "/judge/trajectory"} className="h-8">
+                              <Link to="/judge/trajectory" className="text-xs">Trajectory Deviation</Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        </SidebarMenuSub>
+                      </CollapsibleContent>
+                    </SidebarMenuItem>
+                  </Collapsible>
+                )}
+
+                {/* Evaluator Agents icon only when collapsed */}
+                {isCollapsed && (
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={location.pathname.startsWith("/judge")} tooltip="Evaluator Agents" className="h-9">
+                      <Link to="/judge" className="justify-center">
+                        <Brain className="h-4 w-4" />
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )}
 
 
                 {/* Evaluations (evals3) collapsible section */}
@@ -277,72 +403,19 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                   </SidebarMenuItem>
                 )}
 
-                {/* Agent Judge (concept mockup) */}
-                {!isCollapsed && (
-                  <Collapsible defaultOpen={location.pathname.startsWith("/judge")}>
-                    <SidebarMenuItem>
-                      <SidebarMenuButton
-                        asChild
-                        tooltip="Agent Judge"
-                        isActive={location.pathname.startsWith("/judge")}
-                        className="h-9 w-full"
-                      >
-                        <div className="flex items-center w-full">
-                          <Link to="/judge" className="flex items-center gap-2 flex-1 min-w-0">
-                            <Brain className="h-3.5 w-3.5" />
-                            <span className="text-xs">Agent Judge</span>
-                            <span className="text-[7px] px-1 py-0 rounded bg-purple-100 text-purple-700 dark:bg-purple-500/15 dark:text-purple-400 font-medium">NEW</span>
-                          </Link>
-                          <CollapsibleTrigger asChild>
-                            <button
-                              onClick={(e) => e.stopPropagation()}
-                              className="p-0.5 rounded hover:bg-muted-foreground/20 transition-colors ml-auto"
-                              aria-label="Toggle judge submenu"
-                            >
-                              <ChevronDown className="h-3.5 w-3.5 transition-transform duration-200" />
-                            </button>
-                          </CollapsibleTrigger>
-                        </div>
-                      </SidebarMenuButton>
-                      <CollapsibleContent>
-                        <SidebarMenuSub className="ml-4 mt-1 space-y-1">
-                          <SidebarMenuSubItem>
-                            <SidebarMenuSubButton asChild isActive={location.pathname === "/judge"} className="h-8">
-                              <Link to="/judge" className="text-xs">Configure</Link>
-                            </SidebarMenuSubButton>
-                          </SidebarMenuSubItem>
-                          <SidebarMenuSubItem>
-                            <SidebarMenuSubButton asChild isActive={location.pathname === "/judge/evaluate"} className="h-8">
-                              <Link to="/judge/evaluate" className="text-xs">Live Evaluation</Link>
-                            </SidebarMenuSubButton>
-                          </SidebarMenuSubItem>
-                          <SidebarMenuSubItem>
-                            <SidebarMenuSubButton asChild isActive={location.pathname === "/judge/compare"} className="h-8">
-                              <Link to="/judge/compare" className="text-xs">Guided Compare</Link>
-                            </SidebarMenuSubButton>
-                          </SidebarMenuSubItem>
-                          <SidebarMenuSubItem>
-                            <SidebarMenuSubButton asChild isActive={location.pathname === "/judge/review"} className="h-8">
-                              <Link to="/judge/review" className="text-xs">Stakeholder Review</Link>
-                            </SidebarMenuSubButton>
-                          </SidebarMenuSubItem>
-                          <SidebarMenuSubItem>
-                            <SidebarMenuSubButton asChild isActive={location.pathname === "/judge/trajectory"} className="h-8">
-                              <Link to="/judge/trajectory" className="text-xs">Trajectory Deviation</Link>
-                            </SidebarMenuSubButton>
-                          </SidebarMenuSubItem>
-                        </SidebarMenuSub>
-                      </CollapsibleContent>
-                    </SidebarMenuItem>
-                  </Collapsible>
-                )}
-
-                {/* Agent Judge icon only when collapsed */}
-                {isCollapsed && (
+                {/* Coding Agents — between Evaluations and Settings */}
+                {features.codingAgentAnalytics && (
                   <SidebarMenuItem>
-                    <SidebarMenuButton asChild isActive={location.pathname.startsWith("/judge")} tooltip="Agent Judge" className="h-9">
-                      <Link to="/judge" className="justify-center">
-                        <Brain className="h-4 w-4" />
+                    <SidebarMenuButton
+                      asChild
+                      isActive={location.pathname === "/coding-agents"}
+                      tooltip={isCollapsed ? "Coding Agents" : "Claude Code, Kiro & Codex analytics"}
+                      data-testid="nav-coding-agents"
+                      className="h-9"
+                    >
+                      <Link to="/coding-agents" className={isCollapsed ? 'justify-center' : ''}>
+                        <BarChart3 className="h-3.5 w-3.5" />
+                        {!isCollapsed && <span className="text-xs">Coding Agents</span>}
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
